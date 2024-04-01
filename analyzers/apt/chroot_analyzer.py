@@ -110,7 +110,15 @@ class apt_chroot_analysis():
     ) -> None:
         self.volume_path: str = volume_path
         self.info_path: str = f"{self.volume_path}/var/lib/dpkg/info"
-        self.systemd_path: str = f"{self.volume_path}/lib/systemd/system"
+        if os.path.exists(f"{self.volume_path}/lib/systemd/system"):
+            self.systemd_path: str = os.path.join(
+                self.volume_path, "lib/systemd/system")
+        elif os.path.exists(f"{self.volume_path}/usr/lib/systemd/system"):
+            self.systemd_path: str = os.path.join(
+                self.volume_path, "usr/lib/systemd/system")
+        else:
+            self.systemd_path: str = os.path.join(
+                self.volume_path, "etc/systemd/system")
         self.output_opt: str = output_opt
         self.graphical_plot: bool = graphic_plot
         self.run_bootup_analysis()

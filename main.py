@@ -1,5 +1,5 @@
 import argparse
-from analyzer import apt_chroot_analysis, apt_static_analysis
+from analyzers.apt import apt_chroot_analysis, apt_static_analysis
 
 
 class main():
