@@ -1,109 +1,12 @@
 import os
 import re
 import json
-from pydantic import BaseModel
-from typing import Dict, List, Any
+from typing import List
 from rich.console import Console
 from rich.table import Table
 
-
-class static_mode_entry_info(BaseModel):
-    Package: str = None
-    ServiceName: str
-    ExecutablePath: List[str]
-    ExecutableName: List[str]
-
-    def custom_output(self) -> Dict[str, Any]:
-        return {
-            "Package": self.Package,
-            "ServiceInformation": {
-                f"{self.ServiceName}": {
-                    "ExecutablePath": self.ExecutablePath,
-                    "ExecutableName": self.ExecutableName
-                }
-            }
-        }
-
-    def json(self, *args, **kwargs) -> Dict[str, Any]:
-        return self.custom_output()
-
-
-class static_mode_entry_service(BaseModel):
-    Package: str = None
-    ServiceName: str
-    ExecutablePath: List[str]
-    ExecutableNames: List[str]
-
-    def custom_output(self) -> Dict[str, Any]:
-        service_info = {
-            "ServiceName": self.ServiceName,
-            "ExecutablePath": self.ExecutablePath,
-            "ExecutableNames": self.ExecutableNames
-        }
-        if self.Package:
-            return {self.Package: service_info}
-        return service_info
-
-    def json(self, *args, **kwargs) -> Dict[str, Any]:
-        return self.custom_output()
-
-    @classmethod
-    def combine_entries(
-        cls,
-        entries: List['static_mode_entry_service']
-    ) -> List['static_mode_entry_service']:
-        if not entries:
-            raise ValueError("No entries provided")
-        try:
-            package_dict = {}
-            for entry in entries:
-                if not isinstance(entry, cls):
-                    raise ValueError("Invalid entry type provided")
-                package_name = entry.Package
-                if package_name:
-                    if package_name not in package_dict:
-                        package_dict[package_name] = entry
-                    else:
-                        existing_entry = package_dict[package_name]
-                        existing_entry.ExecutablePath.extend(
-                            entry.ExecutablePath)
-                        existing_entry.ExecutableNames.extend(
-                            entry.ExecutableNames)
-                        # Sort the lists to maintain consistency
-                        existing_entry.ExecutablePath = sorted(
-                            set(existing_entry.ExecutablePath))
-                        existing_entry.ExecutableNames = sorted(
-                            set(existing_entry.ExecutableNames))
-            return cls.filter_duplicates_by_package(
-                list(package_dict.values()))
-        except Exception as e:
-            print(f"Error combining entries: {e}")
-            return []
-
-    @classmethod
-    def filter_duplicates_by_package(
-        cls,
-        entries: List['static_mode_entry_service']
-    ) -> List['static_mode_entry_service']:
-        unique_entries = {}
-        for entry in entries:
-            if not isinstance(entry, cls):
-                raise ValueError("Invalid entry type provided")
-            package_name = entry.Package
-            if package_name not in unique_entries:
-                unique_entries[package_name] = entry
-            else:
-                existing_entry = unique_entries[package_name]
-                existing_entry.ExecutablePath.extend(
-                    entry.ExecutablePath)
-                existing_entry.ExecutableNames.extend(
-                    entry.ExecutableNames)
-                # Sort and remove duplicates
-                existing_entry.ExecutablePath = sorted(
-                    set(existing_entry.ExecutablePath))
-                existing_entry.ExecutableNames = sorted(
-                    set(existing_entry.ExecutableNames))
-        return list(unique_entries.values())
+from .output_formats import static_mode_entry_info
+from .output_formats import static_mode_entry_service
 
 
 class static_analysis_info_files:
@@ -227,8 +130,6 @@ class static_analysis_info_files:
             self.Static_Fast_Table()
         except Exception as e:
             print(f"Error in fast process: {e}")
-
-# STATIC
 
 
 class static_analysis_service_files:
@@ -367,7 +268,6 @@ class static_analysis_service_files:
             print(f"Error generating table: {e}")
 
 
-# MAIN
 class apt_static_analysis:
 
     def __init__(

@@ -1,13 +1,9 @@
 import argparse
-from analyzer import apt_chroot_analysis
-from analyzer import apt_static_analysis
+from analyzer import apt_chroot_analysis, apt_static_analysis
 
 
 class main():
     def __init__(self):
-        self.driver_func()
-
-    def driver_func(self):
         parser = argparse.ArgumentParser(
             prog="main.py",
             description="""
