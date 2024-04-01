@@ -35,8 +35,14 @@ class chroot_mode_entry_service(BaseModel):
             cls,
             entries: List[str]
     ) -> List[str]:
+        if not isinstance(entries, list):
+            raise ValueError("Entries should be provided as a list")
+
         package_dict = {}
         for entry in entries:
+            if not isinstance(entry, cls):
+                raise ValueError("Invalid entry type provided")
+
             package_name = entry.Package
             if package_name:
                 if package_name not in package_dict:
@@ -51,8 +57,11 @@ class chroot_mode_entry_service(BaseModel):
                     existing_entry.ExecutablePath.sort()
                     existing_entry.ExecutableNames.sort()
                     execution_time_str = str(entry.ExecutionTime)
-                    existing_entry.ExecutionTime = int(
-                        re.search(r'\d+', execution_time_str).group())
+                    try:
+                        existing_entry.ExecutionTime = int(
+                            re.search(r'\d+', execution_time_str).group())
+                    except (AttributeError, ValueError):
+                        raise ValueError("Invalid ExecutionTime format")
 
         return list(package_dict.values())
 
@@ -73,11 +82,12 @@ class TimeGraphPlot():
             package_name = package_data.get("Package")
             service_names = package_data.get("ExecutableNames", [])
             execution_time = package_data.get('ExecutionTime')
+            if not execution_time:
+                print(f"ExecutionTime not found for {package_name}")
+                continue
             exec_time = str(execution_time)
             if "ms" in exec_time:
-                exec_time = int(
-                    ''.join(
-                        filter(str.isdigit, execution_time)))
+                exec_time = int(''.join(filter(str.isdigit, exec_time)))
             package_services = {}
             for service_name in service_names:
                 service_file_path = os.path.join(
@@ -97,7 +107,12 @@ class TimeGraphPlot():
                         package_services[service_name] = {
                             "Before": before,
                             "After": after, "ExecutionTime": exec_time}
+                else:
+                    print(f"Service file not found: {service_file_path}")
+            if package_name:
                 result[package_name] = package_services
+            else:
+                print("Package name not found in JSON data.")
         return result
 
     def plot_graph(self) -> None:
@@ -118,18 +133,27 @@ class TimeGraphPlot():
                     for after_service in details.get("After", []):
                         dot.edge(service_name, after_service,
                                  label="After")
-        dot.render('service_flowchart', format='png', cleanup=True)
-        print("Flowchart generated as service_flowchart.png")
+        try:
+            dot.render('service_flowchart', format='png', cleanup=True)
+            print("Flowchart generated as service_flowchart.png")
+        except Exception as e:
+            print(f"Error generating flowchart: {e}")
 
     def render_process_run(self) -> None:
-        self.json_data = json.loads(self.json_data)
+        try:
+            self.json_data = json.loads(self.json_data)
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON data: {e}")
+            return
         self.service_data = self.parse_service_files()
         if not self.service_data:
             print("No valid service data found.")
             return
-        with open('Service_mapping.json', 'w+') as file:
-            data = str(self.service_data)
-            file.write(data)
+        try:
+            with open('Service_mapping.json', 'w+') as file:
+                json.dump(self.service_data, file)
+        except Exception as e:
+            print(f"Error writing to file: {e}")
         self.plot_graph()
 
 
@@ -243,6 +267,8 @@ class apt_chroot_analysis():
 
         for service_name, time in self.extracted_info.items():
             executable_paths = self.extract_executable(service_name)
+            if not executable_paths:
+                continue
             info_files = self.check_info_files(executable_paths)
             exec_names = [os.path.basename(path) for path in executable_paths]
             for package_name in info_files:
@@ -258,18 +284,22 @@ class apt_chroot_analysis():
         combined_entries = chroot_mode_entry_service.combine_entries(
             entries)
         if self.output_opt:
-            data = json.dumps([entry.dict()
-                              for entry in combined_entries], indent=4)
-            with open(self.output_opt, 'w+') as out:
-                out.write(data)
+            try:
+                data = json.dumps([entry.dict()
+                                  for entry in combined_entries], indent=4)
+                with open(self.output_opt, 'w+') as out:
+                    out.write(data)
+            except Exception as e:
+                print(f"Error writing to output file: {e}")
         self.generate_table(combined_entries)
-        if self.graphical_plot is True:
-            TimeGraphPlot(
-                service_files_path=self.systemd_path,
-                json_data=data
-            )
-        else:
-            pass
+        if self.graphical_plot:
+            try:
+                TimeGraphPlot(
+                    service_files_path=self.systemd_path,
+                    json_data=data
+                )
+            except Exception as e:
+                print(f"Error plotting graph: {e}")
 
     def generate_table(
             self, entries: List[chroot_mode_entry_service]) -> None:
