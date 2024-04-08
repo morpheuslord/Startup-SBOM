@@ -73,5 +73,11 @@ Currently the tool works on Debian and Red Hat based images I can guarentee the 
 
 I am working on the pacman side of things I am trying to find a relaiable way of accessing the pacman db for static analysis.
 
+## Sample Output Images (Chroot)
+### APT Chroot
+![apt](./Docs/sample_output_images/apt.png)
+
+### RPM Chroot
+![rpm](./Docs/sample_output_images/rpm.png)
 ## Working
 For the workings and process related documentation please read the wiki page: [Link](https://github.com/morpheuslord/Startup-SBOM/wiki)
