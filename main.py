@@ -1,9 +1,9 @@
 import argparse
 import os
-from analyzers.apt.static_analyzer import apt_static_analysis
-from analyzers.apt.chroot_analyzer import apt_chroot_analysis
-from analyzers.rpm.rpm_chroot_analyzer import rpm_chroot_analysis
-from analyzers.rpm.rpm_static_analyzer import rpm_static_analysis
+from analyzers import apt_static_analysis
+from analyzers import apt_chroot_analysis
+from analyzers import rpm_chroot_analysis
+from analyzers import rpm_static_analysis
 
 
 class main():
@@ -33,6 +33,7 @@ class main():
             '--static-type',
             type=str,
             required=False,
+            default="info",
             help="""
             This is a necessary option for the static processing  mode only.
             It will make sure you are using ether the Service file analysis
@@ -72,40 +73,46 @@ class main():
                 is specific only to CHROOT analysis
             """
         )
+        parser.add_argument(
+            "--pkg-mgr",
+            type=str,
+            required=False,
+            default="",
+            help="""
+                Provides visual plots on the the different packages and
+                associated Service Files and Target files which are being
+                executed at boot. This is based on time of execution and
+                is specific only to CHROOT analysis
+            """
+        )
         args = parser.parse_args()
-        mode = args.analysis_mode
-        volume_path = args.volume_path
-        static_type = args.static_type
-        output_opt = args.save_file
-        info_graphic = args.info_graphic
-        package_mgr = ""
-        if os.path.exists(f"{volume_path}/var/lib/dpkg"):
-            package_mgr = "apt"
-        elif os.path.exists(f"{volume_path}/var/lib/rpm"):
-            package_mgr = "rpm"
-        else:
-            print("Image not supported")
-            quit()
-
-        print(package_mgr)
+        mode: str = args.analysis_mode
+        volume_path: str = args.volume_path
+        static_type: str = args.static_type
+        output_opt: str = args.save_file
+        info_graphic: bool = args.info_graphic
+        package_mgr: str = args.pkg_mgr
+        if package_mgr == "":
+            if os.path.exists(f"{volume_path}/var/lib/dpkg"):
+                package_mgr = "apt"
+            elif os.path.exists(f"{volume_path}/var/lib/rpm"):
+                package_mgr = "rpm"
+            else:
+                print("Image not supported")
+                quit()
 
         if package_mgr == "apt":
             if mode == 'static':
-                if static_type == "":
-                    static_type = "info"
                 apt_static_analysis(volume_path, static_type, output_opt)
             elif mode == 'chroot':
                 apt_chroot_analysis(volume_path, output_opt,
                                     graphic_plot=info_graphic)
         elif package_mgr == "rpm":
             if mode == 'static':
-                if static_type == "":
-                    static_type = "info"
-                rpm_static_analysis(volume_path, static_type, output_opt)
+                rpm_static_analysis(volume_path, output_opt)
             elif mode == 'chroot':
                 rpm_chroot_analysis(volume_path, output_opt,
                                     graphic_plot=info_graphic)
-            rpm_chroot_analysis(volume_path, output_opt)
         else:
             print("Image not supported")
 

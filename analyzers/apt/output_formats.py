@@ -12,10 +12,10 @@ class chroot_mode_entry_service(BaseModel):
 
     def custom_output(self) -> Dict[str, Any]:
         service_info = {
-            "ServiceName": self.ServiceName,
-            "ExecutablePath": self.ExecutablePath,
-            "ExecutableNames": self.ExecutableNames,
-            "ExecutionTime": self.ExecutionTime
+            "ServiceName": str(self.ServiceName),
+            "ExecutablePath": str(self.ExecutablePath),
+            "ExecutableNames": str(self.ExecutableNames),
+            "ExecutionTime": str(self.ExecutionTime)
         }
         if self.Package:
             return {self.Package: service_info}
@@ -51,7 +51,7 @@ class chroot_mode_entry_service(BaseModel):
                     existing_entry.ExecutableNames.sort()
                     execution_time_str = str(entry.ExecutionTime)
                     try:
-                        existing_entry.ExecutionTime = int(
+                        existing_entry.ExecutionTime = str(
                             re.search(r'\d+', execution_time_str).group())
                     except (AttributeError, ValueError):
                         raise ValueError("Invalid ExecutionTime format")

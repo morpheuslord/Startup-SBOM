@@ -1,11 +1,12 @@
 import os
 import re
 import json
-import subprocess
 import graphviz
-from typing import Dict, List, Any
-from rich.console import Console
+import subprocess
+from rich import print
 from rich.table import Table
+from rich.console import Console
+from typing import Dict, List, Any
 
 from .output_formats import chroot_mode_entry_service
 
@@ -52,7 +53,7 @@ class TimeGraphPlot():
                             "Before": before,
                             "After": after, "ExecutionTime": exec_time}
                 else:
-                    print(f"Service file not found: {service_file_path}")
+                    continue
             if package_name:
                 result[package_name] = package_services
             else:
@@ -121,6 +122,7 @@ class apt_chroot_analysis():
                 self.volume_path, "etc/systemd/system")
         self.output_opt: str = output_opt
         self.graphical_plot: bool = graphic_plot
+        self.out_data: Dict[Any, Any] = {}
         self.run_bootup_analysis()
         self.extract_service_times()
         self.service_analysis_process()
@@ -225,22 +227,23 @@ class apt_chroot_analysis():
             exec_names = [os.path.basename(path) for path in executable_paths]
             for package_name in info_files:
                 entry = chroot_mode_entry_service(
-                    Package=package_name,
-                    ServiceName=service_name,
-                    ExecutablePath=executable_paths,
-                    ExecutableNames=exec_names,
-                    ExecutionTime=time
+                    Package=str(package_name),
+                    ServiceName=str(service_name),
+                    ExecutablePath=list(executable_paths),
+                    ExecutableNames=list(exec_names),
+                    ExecutionTime=str(time)
                 )
                 entries.append(entry)
 
         combined_entries = chroot_mode_entry_service.combine_entries(
             entries)
+        self.out_data = json.dumps([entry.dict()
+                                    for entry in combined_entries],
+                                   indent=4)
         if self.output_opt:
             try:
-                data = json.dumps([entry.dict()
-                                  for entry in combined_entries], indent=4)
                 with open(self.output_opt, 'w+') as out:
-                    out.write(data)
+                    out.write(self.out_data)
             except Exception as e:
                 print(f"Error writing to output file: {e}")
         self.generate_table(combined_entries)
@@ -248,7 +251,7 @@ class apt_chroot_analysis():
             try:
                 TimeGraphPlot(
                     service_files_path=self.systemd_path,
-                    json_data=data
+                    json_data=self.out_data
                 )
             except Exception as e:
                 print(f"Error plotting graph: {e}")

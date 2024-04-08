@@ -10,53 +10,115 @@ from rich.table import Table
 
 
 class TimeGraphPlot:
-    def __init__(self, json_data: Dict[str, Any]) -> None:
-        self.json_data = json_data
-        self.service_data = self.parse_service_data()
-        self.plot_graph()
+    def __init__(
+        self,
+        service_files_path: str,
+        json_data: str
+    ) -> None:
+        self.service_files_path: str = service_files_path
+        self.json_data: str = json_data
+        self.service_data: Dict[str, Any] = {}
+        self.render_process_run()
 
-    def parse_service_data(self) -> Dict[str, Any]:
-        service_data = {}
+    def parse_service_files(self) -> Dict[str, Any]:
+        result = {}
 
-        for package_name, package_info in self.json_data.items():
-            service_files = package_info["ServiceFiles"]
+        try:
+            data_dict = json.loads(self.json_data)
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON data: {e}")
+            return result
+
+        for package_name, package_info in data_dict.items():
+            service_files = package_info.get("ServiceFiles", [])
+
+            if not service_files:
+                print(f"No service files found for {package_name}")
+                continue
+
             package_services = {}
 
             for service_info in service_files:
-                service_name = service_info["ServiceName"]
-                execution_time = service_info["ExecutionTime"]
+                service_name = service_info.get("ServiceName")
+                execution_time = service_info.get("ExecutionTime")
 
-                if package_name not in package_services:
-                    package_services[package_name] = []
+                if not service_name or not execution_time:
+                    print(f"Skipping invalid service entry for {package_name}")
+                    continue
 
-                package_services[package_name].append({
-                    "ServiceName": service_name,
-                    "ExecutionTime": execution_time
-                })
+                exec_time = str(execution_time)
+                if "ms" in exec_time:
+                    exec_time = int(''.join(filter(str.isdigit, exec_time)))
 
-            service_data.update(package_services)
+                service_file_path = os.path.join(
+                    self.service_files_path, service_name)
+                if os.path.exists(service_file_path):
+                    with open(service_file_path, 'r') as f:
+                        lines = f.readlines()
+                        before = []
+                        after = []
+                        for line in lines:
+                            if line.startswith("Before="):
+                                before.extend(
+                                    line.strip().split('=')[1].split())
+                            elif line.startswith("After="):
+                                after.extend(
+                                    line.strip().split('=')[1].split())
+                        package_services[service_name] = {
+                            "Before": before,
+                            "After": after,
+                            "ExecutionTime": exec_time
+                        }
+                else:
+                    print(
+                        f"Service file not found for {service_name}")
 
-        return service_data
+            if package_name:
+                result[package_name] = package_services
+
+        return result
 
     def plot_graph(self) -> None:
         dot = graphviz.Digraph(comment='Service Execution Flowchart')
         dot.node("System_Init", label="System Init")
 
         for package_name, services in self.service_data.items():
+            dot.node(package_name, label=package_name)
             dot.edge("System_Init", package_name)
-            for service in services:
-                service_name = service["ServiceName"]
-                execution_time = service["ExecutionTime"]
 
-                dot.node(service_name,
-                         label=f"{service_name}\n{execution_time}")
+            for service_name, details in services.items():
+                dot.node(service_name, label=service_name +
+                         "\n" + str(details["ExecutionTime"]))
                 dot.edge(package_name, service_name)
+
+                for before_service in details.get("Before", []):
+                    dot.node(before_service, label=before_service)
+                    dot.edge(before_service, service_name, label="Before")
+
+                for after_service in details.get("After", []):
+                    dot.node(after_service, label=after_service)
+                    dot.edge(service_name, after_service, label="After")
 
         try:
             dot.render('service_flowchart', format='png', cleanup=True)
             print("Flowchart generated as service_flowchart.png")
         except Exception as e:
             print(f"Error generating flowchart: {e}")
+
+    def render_process_run(self) -> None:
+        self.service_data = self.parse_service_files()
+
+        if not self.service_data:
+            print("No valid service data found.")
+            return
+
+        try:
+            with open('Service_mapping.json', 'w+') as file:
+                json.dump(self.service_data, file)
+        except Exception as e:
+            print(f"Error writing to file: {e}")
+
+        self.plot_graph()
 
 
 class rpm_chroot_analysis:
@@ -232,7 +294,10 @@ class rpm_chroot_analysis:
                 print(f"Error writing to output file: {e}")
         self.display_service_info()
         if self.graphic_plot is True:
-            TimeGraphPlot(self.organized_data)
+            TimeGraphPlot(
+                service_files_path=self.systemd_path,
+                json_data=self.organized_data
+            )
         else:
             pass
 
@@ -257,3 +322,11 @@ class rpm_chroot_analysis:
                 )
 
         console.print(table)
+
+
+if __name__ == "__main__":
+    rpm_chroot_analysis(
+        volume_path="/",
+        output_opt="test.json",
+        graphic_plot=True
+    )
