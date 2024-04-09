@@ -102,15 +102,16 @@ class TimeGraphPlot():
         self.plot_graph()
 
 
-class apt_chroot_analysis():
+class apt_chroot_analysis:
     def __init__(
-        self,
-        volume_path: str,
-        output_opt: str,
-        graphic_plot: bool
-    ) -> None:
+            self,
+            volume_path: str, output_opt: str, graphic_plot: bool) -> None:
         self.volume_path: str = volume_path
         self.info_path: str = f"{self.volume_path}/var/lib/dpkg/info"
+        self.dpkg_status_path: str = f"{self.volume_path}/var/lib/dpkg/status"
+        self.output_opt: str = output_opt
+        self.graphic_plot: bool = graphic_plot
+        self.extracted_info: Dict[str, str] = {}
         if os.path.exists(f"{self.volume_path}/lib/systemd/system"):
             self.systemd_path: str = os.path.join(
                 self.volume_path, "lib/systemd/system")
@@ -120,12 +121,32 @@ class apt_chroot_analysis():
         else:
             self.systemd_path: str = os.path.join(
                 self.volume_path, "etc/systemd/system")
-        self.output_opt: str = output_opt
-        self.graphical_plot: bool = graphic_plot
-        self.out_data: Dict[Any, Any] = {}
+        self.out_data: str = ""
         self.run_bootup_analysis()
         self.extract_service_times()
         self.service_analysis_process()
+
+    def extract_package_version(self, package_name: str) -> str:
+        try:
+            with open(self.dpkg_status_path, 'r') as status_file:
+                current_package = None
+                current_version = None
+
+                for line in status_file:
+                    line = line.strip()
+
+                    if line.startswith("Package: "):
+                        current_package = line.split("Package: ")[1].strip()
+                        if current_package == package_name:
+                            return current_version
+
+                    elif line.startswith("Version: "):
+                        current_version = line.split("Version: ")[1].strip()
+
+                return None
+        except Exception as e:
+            print(f"Error extracting package version for {package_name}: {e}")
+            return None
 
     def run_bootup_analysis(self) -> None:
         try:
@@ -165,18 +186,7 @@ class apt_chroot_analysis():
 
         self.extracted_info = service_times
 
-    def read_service_file(self) -> List[str]:
-        service_files = []
-        if os.path.exists(self.systemd_path):
-            for file in os.listdir(self.systemd_path):
-                if file.endswith(".service"):
-                    service_files.append(file)
-        return service_files
-
-    def extract_executable(
-        self,
-        name: str
-    ) -> List[str]:
+    def extract_executable(self, name: str) -> List[str]:
         executable_paths = []
         service_file_path = os.path.join(self.systemd_path, name)
 
@@ -192,10 +202,7 @@ class apt_chroot_analysis():
                         executable_paths.append(path)
         return executable_paths
 
-    def check_info_files(
-        self,
-        exec_paths: List[str]
-    ) -> List[str]:
+    def check_info_files(self, exec_paths: List[str]) -> List[str]:
         info_files = []
 
         if os.path.exists(self.info_path):
@@ -216,7 +223,7 @@ class apt_chroot_analysis():
                                 break
         return info_files
 
-    def service_analysis_process(self):
+    def service_analysis_process(self) -> None:
         entries = []
 
         for service_name, time in self.extracted_info.items():
@@ -225,29 +232,35 @@ class apt_chroot_analysis():
                 continue
             info_files = self.check_info_files(executable_paths)
             exec_names = [os.path.basename(path) for path in executable_paths]
+
             for package_name in info_files:
+                version = self.extract_package_version(package_name)
+
                 entry = chroot_mode_entry_service(
-                    Package=str(package_name),
-                    ServiceName=str(service_name),
-                    ExecutablePath=list(executable_paths),
-                    ExecutableNames=list(exec_names),
-                    ExecutionTime=str(time)
+                    Package=package_name,
+                    ServiceName=service_name,
+                    ExecutablePath=executable_paths,
+                    ExecutableNames=exec_names,
+                    ExecutionTime=str(time),
+                    Version=version
                 )
                 entries.append(entry)
 
-        combined_entries = chroot_mode_entry_service.combine_entries(
-            entries)
+        combined_entries = chroot_mode_entry_service.combine_entries(entries)
+
         self.out_data = json.dumps([entry.dict()
-                                    for entry in combined_entries],
-                                   indent=4)
+                                   for entry in combined_entries], indent=4)
+
         if self.output_opt:
             try:
-                with open(self.output_opt, 'w+') as out:
-                    out.write(self.out_data)
+                with open(self.output_opt, 'w+') as out_file:
+                    out_file.write(self.out_data)
             except Exception as e:
                 print(f"Error writing to output file: {e}")
+
         self.generate_table(combined_entries)
-        if self.graphical_plot:
+
+        if self.graphic_plot:
             try:
                 TimeGraphPlot(
                     service_files_path=self.systemd_path,
@@ -256,11 +269,11 @@ class apt_chroot_analysis():
             except Exception as e:
                 print(f"Error plotting graph: {e}")
 
-    def generate_table(
-            self, entries: List[chroot_mode_entry_service]) -> None:
+    def generate_table(self, entries: List[chroot_mode_entry_service]) -> None:
         console = Console()
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Package", style="dim")
+        table.add_column("Version", style="dim")
         table.add_column("Service Name")
         table.add_column("Executable Path")
         table.add_column("Executable Names")
@@ -269,11 +282,13 @@ class apt_chroot_analysis():
         for entry in entries:
             package_name = entry.Package if entry.Package else ""
             service_name = entry.ServiceName
+            version = entry.Version
             executable_paths = "\n".join(entry.ExecutablePath)
             executable_names = "\n".join(entry.ExecutableNames)
             execution_time = [str(entry.ExecutionTime)]
             execution_time_str = "\n".join(execution_time)
-            table.add_row(package_name, service_name, executable_paths,
+            table.add_row(package_name, version, service_name,
+                          executable_paths,
                           executable_names, execution_time_str)
 
         console.print(table)

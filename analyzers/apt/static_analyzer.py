@@ -1,44 +1,39 @@
 import os
 import re
 import json
-from typing import List
+from typing import List, Dict
 from rich.console import Console
 from rich.table import Table
+from rich import print
 
 from .output_formats import static_mode_entry_info
 from .output_formats import static_mode_entry_service
 
 
 class static_analysis_info_files:
-    def __init__(
-        self,
-        volume_path: str,
-        output: str
-    ) -> None:
+    def __init__(self, volume_path: str, output_opt: str) -> None:
         try:
             self.volume_path: str = volume_path
             self.info_path: str = f"{self.volume_path}/var/lib/dpkg/info"
-            self.output_opt: str = output
+            self.output_opt: str = output_opt
+            self.entries: List[static_mode_entry_info] = []
+            self.packages: Dict[str, static_mode_entry_info] = {}
             self.static_analysis_fast_process()
         except Exception as e:
             print(f"Error in initialization: {e}")
 
-    def list_info_files(self) -> list[str]:
+    def list_info_files(self) -> List[str]:
         try:
             files_with_list_extension = []
             for filename in os.listdir(self.info_path):
                 if filename.endswith(".list"):
-                    files_with_list_extension.append(
-                        os.path.join(filename))
+                    files_with_list_extension.append(filename)
             return files_with_list_extension
         except Exception as e:
             print(f"Error listing info files: {e}")
             return []
 
-    def list_service_files(
-        self,
-        list_name: str
-    ) -> List[str]:
+    def list_service_files(self, list_name: str) -> List[str]:
         try:
             file_paths = []
             list_file_path = os.path.join(self.info_path, list_name)
@@ -52,10 +47,7 @@ class static_analysis_info_files:
             print(f"Error listing service files: {e}")
             return []
 
-    def list_executable_paths(
-        self,
-        service_path: str
-    ) -> List[str]:
+    def list_executable_paths(self, service_path: str) -> List[str]:
         try:
             service_path_mounted = f"{self.volume_path}/{service_path}"
             executable_paths = []
@@ -76,72 +68,104 @@ class static_analysis_info_files:
             print(f"Error listing executable paths: {e}")
             return []
 
-    def Static_Fast_Table(self):
+    def extract_version(self, package_name: str) -> str:
         try:
-            console = Console()
-            table = Table(show_header=True, header_style="bold magenta")
-            table.add_column("Package", style="dim")
-            table.add_column("Service Name")
-            table.add_column("Executable Path")
-            table.add_column("Executable Names")
-            for entry in self.outputs:
-                package = entry["Package"]
-                for service_name, info in entry["ServiceInformation"].items():
-                    executable_paths = ", ".join(info["ExecutablePath"])
-                    exec_names = ", ".join(info["ExecutableName"])
-                    table.add_row(package, service_name,
-                                  executable_paths, exec_names)
-            console.print(table)
+            dpkg_status_path = f"{self.volume_path}/var/lib/dpkg/status"
+            with open(dpkg_status_path, 'r') as status_file:
+                current_package = None
+                current_version = None
+
+                for line in status_file:
+                    line = line.strip()
+
+                    if line.startswith("Package: "):
+                        current_package = line.split("Package: ")[1].strip()
+                        if current_package == package_name:
+                            return current_version
+
+                    elif line.startswith("Version: "):
+                        current_version = line.split("Version: ")[1].strip()
+
+                return None
         except Exception as e:
-            print(f"Error generating static table: {e}")
+            print(f"Error extracting package version: {e}")
+            return None
 
     def static_analysis_fast_process(self):
         try:
             list_files = self.list_info_files()
-            entries = []
-            outputs = []
-            for names in list_files:
-                package_name = re.sub(
-                    r'\.list$', '', names)
-                service_list = self.list_service_files(names)
-                if not service_list:
-                    service_list = ["No Service File"]
-                else:
-                    for services in service_list:
-                        executable_info = self.list_executable_paths(services)
-                        exec_names = []
-                        for execs in executable_info:
-                            exec_names.append(os.path.basename(execs))
-                        output = static_mode_entry_info(
-                            Package=package_name,
-                            ServiceName=services,
-                            ExecutablePath=executable_info,
-                            ExecutableName=exec_names
-                        )
-                        exec_names = []
-                    entries.append(output)
-            outputs = [entry.json() for entry in entries]
-            self.outputs = outputs
-            if self.output_opt == "":
-                pass
-            else:
-                with open(self.output_opt, 'w+') as out:
-                    out.write(json.dumps(outputs, indent=4))
-            self.Static_Fast_Table()
+
+            for list_name in list_files:
+                package_name = os.path.splitext(list_name)[0]
+                version = self.extract_version(package_name)
+
+                service_files = self.list_service_files(list_name)
+
+                for service_name in service_files:
+                    executable_paths = self.list_executable_paths(service_name)
+                    exec_names = [os.path.basename(path)
+                                  for path in executable_paths]
+
+                    entry = static_mode_entry_info(
+                        Package=package_name,
+                        ServiceName=service_name,
+                        ExecutablePath=executable_paths,
+                        ExecutableName=exec_names,
+                        Version=version
+                    )
+
+                    if package_name not in self.packages:
+                        self.packages[package_name] = entry
+
+            self.generate_output()
+            self.save_packages_to_json()
         except Exception as e:
             print(f"Error in fast process: {e}")
 
+    def save_packages_to_json(self) -> None:
+        try:
+            serializable_packages = [
+                entry.custom_output() for entry in self.packages.values()
+            ]
+            with open(self.output_opt, 'w') as f:
+                json.dump(serializable_packages, f, indent=4)
+            print(f"Successfully saved packages to {self.output_opt}")
+        except Exception as e:
+            print(f"Error saving packages to JSON: {e}")
+
+    def generate_output(self) -> None:
+        try:
+            if not self.packages:
+                print("No entries to display.")
+                return
+
+            console = Console()
+            table = Table(show_header=True, header_style="bold magenta")
+            table.add_column("Package", style="dim")
+            table.add_column("Version", style="dim")
+            table.add_column("Service Name")
+            table.add_column("Executable Path")
+            table.add_column("Executable Names")
+
+            for package_name, entry in self.packages.items():
+                table.add_row(
+                    entry.Package,
+                    entry.Version,
+                    entry.ServiceName,
+                    "\n".join(entry.ExecutablePath),
+                    "\n".join(entry.ExecutableName)
+                )
+
+            console.print(table)
+
+        except Exception as e:
+            print(f"Error generating output: {e}")
+
 
 class static_analysis_service_files:
-
-    def __init__(
-        self,
-        volume_path: str,
-        output_opt: str
-    ) -> None:
+    def __init__(self, volume_path: str, output_opt: str) -> None:
         self.volume_path: str = volume_path
-        self.info_path: str = os.path.join(
-            self.volume_path, "var/lib/dpkg/info")
+        self.output_opt: str = output_opt
         if os.path.exists(f"{self.volume_path}/lib/systemd/system"):
             self.systemd_path: str = os.path.join(
                 self.volume_path, "lib/systemd/system")
@@ -151,28 +175,37 @@ class static_analysis_service_files:
         else:
             self.systemd_path: str = os.path.join(
                 self.volume_path, "etc/systemd/system")
-        self.output_opt: str = output_opt
+        self.info_path = "/var/lib/dpkg/info"
         self.service_analysis_process()
 
-    def read_service_file(self) -> List[str]:
+    def get_systemd_path(self) -> str:
+        paths = [
+            os.path.join(self.volume_path, "lib/systemd/system"),
+            os.path.join(self.volume_path, "usr/lib/systemd/system"),
+            os.path.join(self.volume_path, "etc/systemd/system")
+        ]
+        for path in paths:
+            if os.path.exists(path):
+                return path
+        return ""
+
+    def read_service_files(self) -> List[str]:
         try:
             service_files = []
             if os.path.exists(self.systemd_path):
-                for file in os.listdir(self.systemd_path):
-                    if file.endswith(".service"):
-                        service_files.append(file)
+                service_files.extend([
+                    file for file in os.listdir(self.systemd_path)
+                    if file.endswith(".service")
+                ])
             return service_files
         except OSError as e:
             print(f"Error reading service files: {e}")
             return []
 
-    def extract_executable(
-        self,
-        name: str
-    ) -> List[str]:
+    def extract_executable(self, service_file: str) -> List[str]:
         try:
             executable_paths = []
-            service_file_path = os.path.join(self.systemd_path, name)
+            service_file_path = os.path.join(self.systemd_path, service_file)
 
             if os.path.exists(service_file_path):
                 with open(service_file_path, 'r') as file:
@@ -193,12 +226,67 @@ class static_analysis_service_files:
             print(f"Error extracting executable paths: {e}")
             return []
 
-    def check_info_files(
-        self,
-        exec_paths: List[str]
-    ) -> List[str]:
+    def service_analysis_process(self):
         try:
-            info_files = []
+            self.status_file_path = f'{self.volume_path}/var/lib/dpkg/status'
+            service_files = self.read_service_files()
+            entries = []
+
+            package_versions = self.get_package_versions()
+
+            for service_file in service_files:
+                executable_paths = self.extract_executable(service_file)
+                if not executable_paths:
+                    continue
+
+                info_files = self.check_info_files(
+                    executable_paths, package_versions)
+                for package_name, version in info_files.items():
+                    exec_names_set = {os.path.basename(
+                        path) for path in executable_paths}
+
+                    entry = static_mode_entry_service(
+                        Package=package_name,
+                        Version=version,
+                        ServiceName=service_file,
+                        ExecutablePath=list(executable_paths),
+                        ExecutableNames=list(exec_names_set)
+                    )
+                    entries.append(entry)
+            if not entries:
+                print("No entries found for service analysis.")
+                return
+            combined_entries = static_mode_entry_service.combine_entries(
+                entries)
+            self.generate_output(combined_entries)
+
+        except Exception as e:
+            print(f"Service Process Error: {e}")
+
+    def get_package_versions(self) -> dict:
+        package_versions = {}
+        try:
+            with open(
+                    self.status_file_path,
+                    'r', encoding='utf-8', errors='ignore') as status_file:
+                current_package = None
+                for line in status_file:
+                    line = line.strip()
+                    if line.startswith('Package:'):
+                        current_package = line.split(': ')[1]
+                        package_versions[current_package] = ''
+                    elif line.startswith('Version:') and current_package:
+                        package_versions[current_package] = line.split(': ')[1]
+                    elif line == '' and current_package:
+                        current_package = None
+        except FileNotFoundError:
+            print(f"Error: {self.status_file_path} not found.")
+        return package_versions
+
+    def check_info_files(
+            self, exec_paths: List[str], package_versions: dict) -> dict:
+        info_files = {}
+        try:
             if os.path.exists(self.info_path):
                 for file_name in os.listdir(self.info_path):
                     if file_name.endswith(".list"):
@@ -206,69 +294,65 @@ class static_analysis_service_files:
                             self.info_path, file_name)
                         with open(list_file_path, 'r') as list_file:
                             content = list_file.read()
-                            for exec_path in exec_paths:
-                                if exec_path in content:
-                                    info_files.append(
-                                        os.path.splitext(file_name)[0])
-                                    break
-            return info_files
+                            package_name = os.path.splitext(file_name)[0]
+                            if package_name in package_versions:
+                                for exec_path in exec_paths:
+                                    if exec_path in content:
+                                        info_files[
+                                            package_name] = package_versions[
+                                                package_name]
+                                        break
         except OSError as e:
             print(f"Error checking info files: {e}")
-            return []
+        return info_files
 
-    def service_analysis_process(self):
+    def generate_output(
+            self, entries: List[static_mode_entry_service]) -> None:
         try:
-            service_files = self.read_service_file()
-            entries = []
+            if not entries:
+                print("No entries to display.")
+                return
 
-            for service_file in service_files:
-                executable_paths_set = set()
-                executable_paths = self.extract_executable(service_file)
-                executable_paths_set.update(executable_paths)
-                info_files = self.check_info_files(executable_paths_set)
-                exec_names_set = set()
-                for path in executable_paths_set:
-                    exec_names_set.add(os.path.basename(path))
-                exec_names = list(exec_names_set)
-                for package_name in info_files:
-                    entry = static_mode_entry_service(
-                        Package=package_name,
-                        ServiceName=service_file,
-                        ExecutablePath=list(executable_paths_set),
-                        ExecutableNames=exec_names
-                    )
-                    entries.append(entry)
+            if self.output_opt == '':
+                self.generate_table(entries)
+            else:
+                with open(self.output_opt, 'w+') as outfile:
+                    out_entry = []
+                    for entry in entries:
+                        if entry.Package:
+                            entry_json = entry.json()
+                            out_entry.append(entry_json)
+                    outfile.write(json.dumps(out_entry))
 
-            combined_entries = static_mode_entry_service.combine_entries(
-                entries)
-            if self.output_opt:
-                data = json.dumps([entry.dict()
-                                  for entry in combined_entries], indent=4)
-                with open(self.output_opt, 'w+') as out:
-                    out.write(data)
-            self.generate_table(combined_entries)
+                print(f"Output written to {self.output_opt}")
+                # Display table in console
+                self.generate_table(entries)
+
         except Exception as e:
-            print(f"Error in service analysis process: {e}")
+            print(f"Error generating output: {e}")
 
-    def generate_table(
-        self,
-        entries: List[static_mode_entry_service]
-    ) -> None:
+    def generate_table(self, entries: List[static_mode_entry_service]) -> None:
         try:
+            if not entries:
+                print("No entries to display.")
+                return
+
             console = Console()
             table = Table(show_header=True, header_style="bold magenta")
             table.add_column("Package", style="dim")
+            table.add_column("Version", style="dim")
             table.add_column("Service Name")
             table.add_column("Executable Path")
             table.add_column("Executable Names")
 
             for entry in entries:
-                package_name = entry.Package if entry.Package else ""
-                service_name = entry.ServiceName
-                executable_paths = "\n".join(entry.ExecutablePath)
-                executable_names = "\n".join(entry.ExecutableNames)
-                table.add_row(package_name, service_name,
-                              executable_paths, executable_names)
+                table.add_row(
+                    entry.Package,
+                    entry.Version,
+                    entry.ServiceName,
+                    "\n".join(entry.ExecutablePath),
+                    "\n".join(entry.ExecutableNames)
+                )
 
             console.print(table)
         except Exception as e:
@@ -288,7 +372,7 @@ class apt_static_analysis:
         try:
             if self.process_opt == "info":
                 static_analysis_info_files(
-                    volume_path=self.volume_path, output=self.output
+                    volume_path=self.volume_path, output_opt=self.output
                 )
             elif self.process_opt == "service":
                 static_analysis_service_files(
