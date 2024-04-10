@@ -87,6 +87,7 @@ For the workings and process related documentation please read the wiki page: [L
 ## TODO
 - [x] Support for RPM
 - [x] Support for APT
+- [x] Support for Chroot Analysis
 - [x] Support for Versions
 - [x] Support for Chroot Graphical output
 - [ ] Support for Pacman
