@@ -73,11 +73,24 @@ Currently the tool works on Debian and Red Hat based images I can guarentee the 
 
 I am working on the pacman side of things I am trying to find a relaiable way of accessing the pacman db for static analysis.
 
-## Sample Output Images (Chroot)
+## Graphical Output Images (Chroot)
 ### APT Chroot
 ![apt](./Docs/sample_output_images/apt.png)
 
 ### RPM Chroot
 ![rpm](./Docs/sample_output_images/rpm.png)
-## Working
+
+## Inner Workings
 For the workings and process related documentation please read the wiki page: [Link](https://github.com/morpheuslord/Startup-SBOM/wiki)
+
+
+## TODO
+- [x] Support for RPM
+- [x] Support for APT
+- [x] Support for Chroot Analysis
+- [x] Support for Versions
+- [x] Support for Chroot Graphical output
+- [ ] Support for Pacman
+- [ ] Support for organized graphical output
+
+Ideas regarding these are welcome in the discussions page.
