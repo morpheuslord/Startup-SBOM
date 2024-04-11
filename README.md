@@ -90,7 +90,9 @@ For the workings and process related documentation please read the wiki page: [L
 - [x] Support for Chroot Analysis
 - [x] Support for Versions
 - [x] Support for Chroot Graphical output
+- [x] Support for organized graphical output
 - [ ] Support for Pacman
-- [ ] Support for organized graphical output
 
-Ideas regarding these are welcome in the discussions page.
+
+## Ideas and Discussions
+Ideas regarding this topic are welcome in the discussions page.
