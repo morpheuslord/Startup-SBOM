@@ -10,11 +10,7 @@ from rich.table import Table
 
 
 class TimeGraphPlot:
-    def __init__(
-        self,
-        service_files_path: str,
-        json_data: str
-    ) -> None:
+    def __init__(self, service_files_path: str, json_data: str) -> None:
         self.service_files_path: str = service_files_path
         self.json_data: str = json_data
         self.service_data: Dict[str, Any] = {}
@@ -52,6 +48,7 @@ class TimeGraphPlot:
 
                 service_file_path = os.path.join(
                     self.service_files_path, service_name)
+
                 if os.path.exists(service_file_path):
                     with open(service_file_path, 'r') as f:
                         lines = f.readlines()
@@ -70,8 +67,7 @@ class TimeGraphPlot:
                             "ExecutionTime": exec_time
                         }
                 else:
-                    print(
-                        f"Service file not found for {service_name}")
+                    print(f"Service file not found for {service_name}")
 
             if package_name:
                 result[package_name] = package_services
@@ -79,28 +75,88 @@ class TimeGraphPlot:
         return result
 
     def plot_graph(self) -> None:
-        dot = graphviz.Digraph(comment='Service Execution Flowchart')
-        dot.node("System_Init", label="System Init")
+        dot = graphviz.Digraph(
+            comment='Service Execution Flowchart', format='png')
+        dot.attr(rankdir='LR', nodesep='1', fontsize='11', splines='ortho')
+
+        line_styles = {
+            "before": {"style": "dashed", "color": "blue", "width": "2"},
+            "after": {"style": "dotted", "color": "red", "width": "2"},
+            "package": {"style": "solid", "color": "grey", "width": "2"}
+        }
+
+        dot.node("legend_header", label="Legend", shape='plaintext',
+                 fontsize='16', fontcolor='black')
+        dot.node("legend_before", label="Before", shape='rectangle',
+                 style='filled', fillcolor=line_styles["before"]["color"])
+        dot.node("legend_after", label="After", shape='rectangle',
+                 style='filled', fillcolor=line_styles["after"]["color"])
+        dot.node("legend_package", label="Package", shape='rectangle',
+                 style='filled', fillcolor=line_styles["package"]["color"])
+
+        dot.edge(
+            "legend_header", "legend_before", label=" ",
+            style=line_styles["before"]["style"],
+            color=line_styles["before"]["color"])
+        dot.edge(
+            "legend_header", "legend_after", label=" ",
+            style=line_styles["after"]["style"],
+            color=line_styles["after"]["color"])
+        dot.edge(
+            "legend_header", "legend_package", label=" ",
+            style=line_styles["package"]["style"],
+            color=line_styles["package"]["color"])
+
+        dot.node("System_Init", label="System Init", shape='rectangle',
+                 style='filled', fillcolor='lightblue', rank='max')
+
+        processed_nodes = set()
 
         for package_name, services in self.service_data.items():
-            dot.node(package_name, label=package_name)
-            dot.edge("System_Init", package_name)
+            dot.node(
+                package_name, label=package_name, shape='rectangle',
+                style='filled',
+                fillcolor=line_styles["package"]["color"], rank='same')
+
+            dot.edge("System_Init", package_name,
+                     style=line_styles["package"]["style"])
 
             for service_name, details in services.items():
-                dot.node(service_name, label=service_name +
-                         "\n" + str(details["ExecutionTime"]))
+                execution_time = details.get("ExecutionTime", "")
+                service_label = f"""
+                {service_name}\n({execution_time} ms)
+                """ if execution_time else service_name
+                dot.node(service_name, label=service_label, shape='ellipse',
+                         style='filled', fillcolor='white', rank='same')
+
                 dot.edge(package_name, service_name)
 
                 for before_service in details.get("Before", []):
-                    dot.node(before_service, label=before_service)
-                    dot.edge(before_service, service_name, label="Before")
+                    if before_service in processed_nodes:
+                        continue
+                    dot.node(before_service, label=before_service,
+                             shape='ellipse',
+                             style='filled', fillcolor='white', rank='same')
+                    dot.edge(before_service, service_name, label="Before",
+                             style=line_styles["before"]["style"],
+                             color=line_styles["before"]["color"])
+                    processed_nodes.add(before_service)
 
                 for after_service in details.get("After", []):
-                    dot.node(after_service, label=after_service)
-                    dot.edge(service_name, after_service, label="After")
+                    if after_service in processed_nodes:
+                        continue
+                    dot.node(after_service, label=after_service,
+                             shape='ellipse',
+                             style='filled', fillcolor='white', rank='same')
+                    dot.edge(service_name, after_service, label="After",
+                             style=line_styles["after"]["style"],
+                             color=line_styles["after"]["color"])
+                    processed_nodes.add(after_service)
+
+                processed_nodes.add(service_name)
 
         try:
-            dot.render('service_flowchart', format='png', cleanup=True)
+            dot.render('service_flowchart', cleanup=True)
             print("Flowchart generated as service_flowchart.png")
         except Exception as e:
             print(f"Error generating flowchart: {e}")
