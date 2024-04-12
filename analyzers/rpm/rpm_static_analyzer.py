@@ -3,31 +3,12 @@ import re
 import rpm
 import json
 from typing import Dict, Set
-from pydantic import BaseModel
 from rich.table import Table
 from rich.console import Console
 
-
-class ServiceInfo(BaseModel):
-    executable_paths: Set[str]
-
-
-class PackageServiceInfo(BaseModel):
-    package_version: str
-    service_names: Dict[str, ServiceInfo]
-
-
-class PackageInfo(BaseModel):
-    root: Dict[str, PackageServiceInfo]
-
-
-class CustomJSONEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, set):
-            return list(obj)
-        elif hasattr(obj, 'dict'):
-            return obj.dict()
-        return super().default(obj)
+from ..output_formats.rpm_outputs import PackageServiceInfo
+from ..output_formats.rpm_outputs import CustomJSONEncoder
+from ..output_formats.rpm_outputs import ServiceInfo
 
 
 class rpm_static_analysis:
@@ -73,7 +54,6 @@ class rpm_static_analysis:
                 ]
 
                 if service_files:
-                    # Use set to ensure uniqueness
                     service_info = ServiceInfo(executable_paths=set())
                     for service_file in service_files:
                         executable_paths = self.extract_executable_paths(
