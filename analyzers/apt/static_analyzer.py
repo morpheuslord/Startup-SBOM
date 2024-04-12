@@ -6,8 +6,8 @@ from rich.console import Console
 from rich.table import Table
 from rich import print
 
-from .output_formats import static_mode_entry_info
-from .output_formats import static_mode_entry_service
+from ..output_formats.apt_outputs import static_mode_entry_info
+from ..output_formats.apt_outputs import static_mode_entry_service
 
 
 class static_analysis_info_files:
