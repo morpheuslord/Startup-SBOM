@@ -7,7 +7,7 @@ from analyzers import rpm_static_analysis
 
 
 class main():
-    def __init__(self):
+    def __init__(self) -> None:
         parser = argparse.ArgumentParser(
             prog="main.py",
             description="""
