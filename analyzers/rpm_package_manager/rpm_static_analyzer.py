@@ -19,10 +19,6 @@ class rpm_static_analysis:
         self.systemd_path: str = self.get_systemd_path()
         self.set_rpm_db_path()
         self.package_info = self.create_packages_json()
-        self.utils = rpm_utils(
-            systemd_path=self.systemd_path,
-            volume_path=self.volume_path,
-        )
         self.service_analysis_process()
 
     def get_systemd_path(self) -> str:
@@ -42,7 +38,10 @@ class rpm_static_analysis:
 
     def create_packages_json(self) -> Dict[str, PackageServiceInfo]:
         package_info = {}
-
+        self.utils = rpm_utils(
+            systemd_path=self.systemd_path,
+            volume_path=self.volume_path,
+        )
         ts = rpm.TransactionSet()
         mi = ts.dbMatch()
 
@@ -77,10 +76,10 @@ class rpm_static_analysis:
     def service_analysis_process(self) -> None:
         console = Console()
         table = Table(show_header=True, header_style="bold magenta")
-        table.add_column("Package", style="dim")
-        table.add_column("Package Version")
-        table.add_column("Service Name")
-        table.add_column("Executable Paths")
+        table.add_column("Package", style="cyan")
+        table.add_column("Package Version", style="green")
+        table.add_column("Service Name", style="blue")
+        table.add_column("Executable Paths", style="yellow")
 
         for package_name, page_s_i in self.package_info.items():
             package_version = page_s_i.package_version
