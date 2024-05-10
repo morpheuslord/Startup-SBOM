@@ -191,8 +191,6 @@ class apt_utils:
     def list_info_files(self) -> List[str]:
         try:
             files_with_list_extension = []
-
-            # Check if info_path exists and gather .list files
             if os.path.exists(self.info_path):
                 for filename in os.listdir(self.info_path):
                     if filename.endswith(".list"):

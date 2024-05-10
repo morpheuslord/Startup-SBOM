@@ -3,7 +3,12 @@ from pydantic import BaseModel
 from typing import Dict, List, Any
 
 
-class chroot_mode_entry_service(BaseModel):
+class OutputFormatInterface:
+    def custom_output(self) -> Dict[str, Any]:
+        raise NotImplementedError
+
+
+class chroot_mode_entry_service(OutputFormatInterface, BaseModel):
     Package: str = None
     ServiceName: str
     ExecutablePath: List[str]
@@ -62,7 +67,7 @@ class chroot_mode_entry_service(BaseModel):
         return list(package_dict.values())
 
 
-class static_mode_entry_info(BaseModel):
+class static_mode_entry_info(OutputFormatInterface, BaseModel):
     Package: str = None
     ServiceName: str
     ExecutablePath: List[str]
@@ -84,7 +89,7 @@ class static_mode_entry_info(BaseModel):
         return self.custom_output()
 
 
-class static_mode_entry_service(BaseModel):
+class static_mode_entry_service(OutputFormatInterface, BaseModel):
     Package: str = None
     Version: str = None  # New field for package version
     ServiceName: str
@@ -157,14 +162,12 @@ class static_mode_entry_service(BaseModel):
                 unique_entries[package_name] = entry
             else:
                 existing_entry = unique_entries[package_name]
-                # Merge executable paths and names
                 existing_entry.ExecutablePath.extend(entry.ExecutablePath)
                 existing_entry.ExecutableNames.extend(entry.ExecutableNames)
                 existing_entry.ExecutablePath = sorted(
                     set(existing_entry.ExecutablePath))
                 existing_entry.ExecutableNames = sorted(
                     set(existing_entry.ExecutableNames))
-                # Update version if available
                 if entry.Version and not existing_entry.Version:
                     existing_entry.Version = entry.Version
         return list(unique_entries.values())

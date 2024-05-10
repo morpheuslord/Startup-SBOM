@@ -7,6 +7,7 @@ from typing import Dict
 
 from ..output_formatting.apt_outputs import chroot_mode_entry_service
 from ..output_formatting.time_plot import AptTimeGraphPlot
+from ..output_formatting.cdx import convert_to_cdx_apt_chroot
 from ..package_utils.apt_utils import apt_utils
 
 
@@ -106,11 +107,12 @@ class apt_chroot_analysis:
 
         self.out_data = json.dumps([entry.dict()
                                    for entry in combined_entries], indent=4)
-
+        cdx_data = convert_to_cdx_apt_chroot(
+            self.out_data)
         if self.output_opt:
             try:
                 with open(self.output_opt, 'w+') as out_file:
-                    out_file.write(self.out_data)
+                    out_file.write(json.dumps(cdx_data))
             except Exception as e:
                 print(f"Error writing to output file: {e}")
         utils.generate_table_chroot(entries=combined_entries)

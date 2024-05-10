@@ -105,8 +105,11 @@ class main():
             if mode == 'static':
                 apt_static_analysis(volume_path, static_type, output_opt)
             elif mode == 'chroot':
-                apt_chroot_analysis(volume_path, output_opt,
-                                    graphic_plot=info_graphic)
+                apt_chroot_analysis(
+                    volume_path,
+                    output_opt,
+                    graphic_plot=info_graphic
+                )
         elif package_mgr == "rpm":
             if mode == 'static':
                 rpm_static_analysis(volume_path, output_opt)
