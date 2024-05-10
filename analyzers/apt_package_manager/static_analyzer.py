@@ -5,6 +5,8 @@ from rich import print
 
 from ..output_formatting.apt_outputs import static_mode_entry_info
 from ..output_formatting.apt_outputs import static_mode_entry_service
+from ..output_formatting.cdx import convert_to_cdx_apt_static_info
+from ..output_formatting.cdx import convert_to_cdx_apt_static_service
 from ..package_utils.apt_utils import apt_utils
 
 
@@ -60,8 +62,9 @@ class static_analysis_info_files:
             serializable_packages = [
                 entry.custom_output() for entry in self.packages.values()
             ]
+            cdx_out = convert_to_cdx_apt_static_info(serializable_packages)
             with open(self.output_opt, 'w') as f:
-                json.dump(serializable_packages, f, indent=4)
+                json.dump(cdx_out, f, indent=4)
             print(f"Successfully saved packages to {self.output_opt}")
         except Exception as e:
             if self.output_opt == '':
@@ -148,7 +151,8 @@ class static_analysis_service_files:
                         if entry.Package:
                             entry_json = entry.json()
                             out_entry.append(entry_json)
-                    outfile.write(json.dumps(out_entry))
+                    cdx_output = convert_to_cdx_apt_static_service(out_entry)
+                    outfile.write(json.dumps(cdx_output))
 
                 print(f"Output written to {self.output_opt}")
                 self.utils.generate_table_static_service(entries)
