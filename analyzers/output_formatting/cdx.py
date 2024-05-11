@@ -63,6 +63,70 @@ def convert_to_cdx_apt_static_service(
     return bom
 
 
+def convert_to_cdx_rpm_static_service(
+        json_data: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    components = []
+    os = get_linux_distribution()
+    for package, package_data in json_data.items():
+        name = package
+        version = package_data["package_version"]
+        component = {
+            "name": name,
+            "version": version,
+            "purl": f"pkg:{os}/{name}@{version}"
+        }
+        components.append(component)
+
+        if "service_names" in package_data:
+            for service_name, service_info in package_data[
+                    "service_names"].items():
+                service_version = service_info.get("package_version", version)
+                service_component = {
+                    "name": service_name,
+                    "version": service_version,
+                    "purl": f"pkg:{os}/{name}@{service_version}"
+                }
+                components.append(service_component)
+
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.3",
+        "components": components
+    }
+
+    return bom
+
+
+def convert_to_cdx_rpm_chroot(data):
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON data: {e}")
+            return []
+
+    components = []
+    os = get_linux_distribution()
+    for package_name, package_data in data.items():
+        package_version = package_data['PackageVersion']
+
+        for service_file in package_data['ServiceFiles']:
+            component = {
+                "name": package_name,
+                "version": package_version,
+                "purl": f"pkg:{os}/{package_name}@{package_version}"
+            }
+            components.append(component)
+
+    bom = {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.3",
+        "components": components
+    }
+
+    return bom
+
+
 def convert_to_cdx_apt_static_info(json_data: str) -> Dict[str, Any]:
     components = []
     os = get_linux_distribution()

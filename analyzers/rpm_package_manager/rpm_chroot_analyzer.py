@@ -7,6 +7,7 @@ from typing import Dict, List, Union
 from rich import print
 
 from ..output_formatting.time_plot import RpmTimeGraphPlot
+from ..output_formatting.cdx import convert_to_cdx_rpm_chroot
 from ..package_utils.rpm_utils import rpm_utils
 
 
@@ -149,10 +150,11 @@ class rpm_chroot_analysis:
             output_json[package_name] = package_data
 
         self.organized_data = json.dumps(output_json, indent=4)
+        cdx_output = convert_to_cdx_rpm_chroot(self.organized_data)
         if self.output_opt:
             try:
-                with open(self.output_opt, 'w+') as out:
-                    out.write(self.organized_data)
+                with open(self.output_opt, 'w+') as out_file:
+                    json.dump(cdx_output, out_file, indent=4)
             except Exception as e:
                 print(f"Error writing to output file: {e}")
         self.utils.display_service_info(self.organized_data)
