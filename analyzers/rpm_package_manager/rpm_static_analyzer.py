@@ -2,12 +2,12 @@ import os
 import rpm
 import json
 from typing import Dict
+from rich import print
 from rich.table import Table
-from rich.console import Console
 
 from ..output_formatting.rpm_outputs import PackageServiceInfo
-from ..output_formatting.rpm_outputs import CustomJSONEncoder
 from ..output_formatting.rpm_outputs import ServiceInfo
+from ..output_formatting.cdx import convert_to_cdx_rpm_static_service
 from ..package_utils.rpm_utils import rpm_utils
 
 
@@ -74,7 +74,6 @@ class rpm_static_analysis:
         return package_info
 
     def service_analysis_process(self) -> None:
-        console = Console()
         table = Table(show_header=True, header_style="bold magenta")
         table.add_column("Package", style="cyan")
         table.add_column("Package Version", style="green")
@@ -88,12 +87,27 @@ class rpm_static_analysis:
                 if executable_paths:
                     table.add_row(package_name, package_version,
                                   service_name, ", ".join(executable_paths))
-        console.print(table)
+        print(table)
         if self.output_opt:
             try:
-                with open(self.output_opt, 'w') as json_file:
-                    json.dump(self.package_info, json_file,
-                              indent=4, cls=CustomJSONEncoder)
+                normalized_data = {}
+                for package_name, package_info in self.package_info.items():
+                    normalized_data[package_name] = {
+                        'package_version': package_info.package_version,
+                        'service_names': {}
+                    }
+                    for service_name, service_info in (
+                            package_info.service_names.items()):
+                        normalized_data[
+                            package_name]['service_names'][service_name] = {
+                            'executable_paths': list(
+                                service_info.executable_paths)
+                        }
+
+                cdx_output = convert_to_cdx_rpm_static_service(normalized_data)
+                with open(self.output_opt, 'w+') as json_file:
+                    # Serialize the dictionary to a JSON string
+                    json.dump(cdx_output, json_file, indent=2)
                 print(f"Scan data saved to: {self.output_opt}")
             except Exception as e:
                 print(f"Error saving scan data to JSON file: {e}")
