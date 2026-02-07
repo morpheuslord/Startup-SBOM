@@ -63,9 +63,14 @@ class chroot_mode_entry_service(OutputFormatInterface, BaseModel):
                         existing_entry.ExecutionTime = str(
                             re.search(r'\d+', execution_time_str).group())
                     except (AttributeError, ValueError):
-                        raise ValueError("Invalid ExecutionTime format")
+                        # Keep original if regex fails
+                        pass
                     if entry.Version > existing_entry.Version:
                         existing_entry.Version = entry.Version
+                    
+                    # Merge vulnerabilities if needed, or just keep one set
+                    if entry.Vulnerabilities and not existing_entry.Vulnerabilities:
+                        existing_entry.Vulnerabilities = entry.Vulnerabilities
 
         return list(package_dict.values())
 
@@ -98,7 +103,7 @@ class static_mode_entry_info(OutputFormatInterface, BaseModel):
 
 class static_mode_entry_service(OutputFormatInterface, BaseModel):
     Package: str = None
-    Version: str = None  # New field for package version
+    Version: str = None
     ServiceName: str
     ExecutablePath: List[str]
     ExecutableNames: List[str]
@@ -112,7 +117,6 @@ class static_mode_entry_service(OutputFormatInterface, BaseModel):
         }
         if self.Package:
             service_info["Package"] = self.Package
-            # Include version if available
             service_info["Version"] = self.Version
         if self.Vulnerabilities:
             service_info["Vulnerabilities"] = self.Vulnerabilities
@@ -140,7 +144,6 @@ class static_mode_entry_service(OutputFormatInterface, BaseModel):
                         package_dict[package_name] = entry
                     else:
                         existing_entry = package_dict[package_name]
-                        # Merge executable paths and names
                         existing_entry.ExecutablePath.extend(
                             entry.ExecutablePath)
                         existing_entry.ExecutableNames.extend(
@@ -149,35 +152,13 @@ class static_mode_entry_service(OutputFormatInterface, BaseModel):
                             set(existing_entry.ExecutablePath))
                         existing_entry.ExecutableNames = sorted(
                             set(existing_entry.ExecutableNames))
-                        # Update version if available
                         if version and not existing_entry.Version:
                             existing_entry.Version = version
-            return cls.filter_duplicates_by_package(
-                list(package_dict.values()))
+                        
+                        if entry.Vulnerabilities and not existing_entry.Vulnerabilities:
+                            existing_entry.Vulnerabilities = entry.Vulnerabilities
+                            
+            return list(package_dict.values())
         except Exception as e:
             print(f"Error combining entries: {e}")
             return []
-
-    @classmethod
-    def filter_duplicates_by_package(
-            cls,
-            entries: List['static_mode_entry_service']
-    ) -> List['static_mode_entry_service']:
-        unique_entries = {}
-        for entry in entries:
-            if not isinstance(entry, cls):
-                raise ValueError("Invalid entry type provided")
-            package_name = entry.Package
-            if package_name not in unique_entries:
-                unique_entries[package_name] = entry
-            else:
-                existing_entry = unique_entries[package_name]
-                existing_entry.ExecutablePath.extend(entry.ExecutablePath)
-                existing_entry.ExecutableNames.extend(entry.ExecutableNames)
-                existing_entry.ExecutablePath = sorted(
-                    set(existing_entry.ExecutablePath))
-                existing_entry.ExecutableNames = sorted(
-                    set(existing_entry.ExecutableNames))
-                if entry.Version and not existing_entry.Version:
-                    existing_entry.Version = entry.Version
-        return list(unique_entries.values())

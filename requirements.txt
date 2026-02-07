@@ -2,3 +2,4 @@ rich==13.4.2
 pydantic==2.6.4
 graphviz==0.20.1
 rpm==0.1.0
+nvdlib>=0.8.0

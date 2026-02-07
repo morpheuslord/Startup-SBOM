@@ -151,8 +151,13 @@ class RpmTimeGraphPlot:
                 processed_nodes.add(service_name)
 
         try:
-            dot.render('service_flowchart', cleanup=True)
-            print("Flowchart generated as service_flowchart.png")
+            output_path = dot.render('service_flowchart', cleanup=True, view=False)
+            print(f"Flowchart generated: {output_path}")
+        except graphviz.ExecutableNotFound:
+            # Graphviz not installed - save DOT source and convert using alternative method
+            dot.save('service_flowchart.dot')
+            print("Warning: Graphviz executable not found. DOT file saved as service_flowchart.dot")
+            print("Install Graphviz to generate PNG: sudo apt install graphviz")
         except Exception as e:
             print(f"Error generating flowchart: {e}")
 
@@ -318,7 +323,12 @@ class AptTimeGraphPlot:
                 processed_nodes.add(service_name)
 
         try:
-            dot.render('service_flowchart', cleanup=True)
-            print("Flowchart generated as service_flowchart.png")
+            output_path = dot.render('service_flowchart', cleanup=True, view=False)
+            print(f"Flowchart generated: {output_path}")
+        except graphviz.ExecutableNotFound:
+            # Graphviz not installed - save DOT source and convert using alternative method
+            dot.save('service_flowchart.dot')
+            print("Warning: Graphviz executable not found. DOT file saved as service_flowchart.dot")
+            print("Install Graphviz to generate PNG: sudo apt install graphviz")
         except Exception as e:
             print(f"Error generating flowchart: {e}")

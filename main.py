@@ -4,6 +4,8 @@ from analyzers import apt_static_analysis
 from analyzers import apt_chroot_analysis
 from analyzers import rpm_chroot_analysis
 from analyzers import rpm_static_analysis
+from analyzers import pacman_chroot_analysis
+from analyzers import pacman_static_analysis
 
 
 class main():
@@ -85,6 +87,18 @@ class main():
                 is specific only to CHROOT analysis
             """
         )
+        parser.add_argument(
+            "--cve-analysis",
+            action='store_true',
+            default=False,
+            help="""
+                Enable CVE vulnerability scanning for packages using the
+                NIST NVD API. This will check each package for known
+                vulnerabilities and display severity information.
+                Note: This requires network access and may take time
+                due to API rate limits.
+            """
+        )
         args = parser.parse_args()
         mode: str = args.analysis_mode
         volume_path: str = args.volume_path
@@ -92,23 +106,27 @@ class main():
         output_opt: str = args.save_file
         info_graphic: bool = args.info_graphic
         package_mgr: str = args.pkg_mgr
+        cve_analysis: bool = args.cve_analysis
         if package_mgr == "":
             if os.path.exists(f"{volume_path}/var/lib/dpkg"):
                 package_mgr = "apt"
             elif os.path.exists(f"{volume_path}/var/lib/rpm"):
                 package_mgr = "rpm"
+            elif os.path.exists(f"{volume_path}/var/lib/pacman"):
+                package_mgr = "pacman"
             else:
                 print("Image not supported")
                 quit()
 
         if package_mgr == "apt":
             if mode == 'static':
-                apt_static_analysis(volume_path, static_type, output_opt)
+                apt_static_analysis(volume_path, static_type, output_opt, cve_analysis)
             elif mode == 'chroot':
                 apt_chroot_analysis(
                     volume_path,
                     output_opt,
-                    graphic_plot=info_graphic
+                    graphic_plot=info_graphic,
+                    cve_analysis=cve_analysis
                 )
         elif package_mgr == "rpm":
             if mode == 'static':
@@ -116,6 +134,16 @@ class main():
             elif mode == 'chroot':
                 rpm_chroot_analysis(volume_path, output_opt,
                                     graphic_plot=info_graphic)
+        elif package_mgr == "pacman":
+            if mode == 'static':
+                pacman_static_analysis(volume_path, static_type, output_opt, cve_analysis)
+            elif mode == 'chroot':
+                pacman_chroot_analysis(
+                    volume_path,
+                    output_opt,
+                    graphic_plot=info_graphic,
+                    cve_analysis=cve_analysis
+                )
         else:
             print("Image not supported")
 

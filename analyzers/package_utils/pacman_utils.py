@@ -4,48 +4,32 @@ from rich import print
 from rich.table import Table
 from typing import List, Union, Dict, Optional
 
-from ..output_formatting.apt_outputs import chroot_mode_entry_service
-from ..output_formatting.apt_outputs import static_mode_entry_service
+from ..output_formatting.pacman_outputs import chroot_mode_entry_service
+from ..output_formatting.pacman_outputs import static_mode_entry_service
 
 
-class apt_utils:
+class pacman_utils:
     def __init__(
             self,
-            dpkg_path: str = "",
             systemd_path: str = "",
-            info_path: str = "",
             volume_path: str = ""
-
     ) -> None:
-        self.dpkg_status_path = dpkg_path
         self.systemd_path = systemd_path
-        self.info_path = info_path
         self.volume_path = volume_path
-        pass
+        self.local_db_path = os.path.join(self.volume_path, 'var/lib/pacman/local')
 
     """
     LISTING SERVICE FILES
     """
 
-    def analyze_services(self, list_name: str = None) -> List[str]:
+    def analyze_services(self) -> List[str]:
         service_files = []
-
         try:
-            if list_name:
-                list_file_path = os.path.join(self.info_path, list_name)
-                if os.path.exists(list_file_path):
-                    with open(list_file_path, 'r') as file:
-                        for line in file:
-                            if re.search(r'\.service\b(?![.\w])', line):
-                                service_files.append(line.strip())
-
-            else:
-                if os.path.exists(self.systemd_path):
-                    service_files.extend([
-                        file for file in os.listdir(self.systemd_path)
-                        if file.endswith(".service")
-                    ])
-
+            if os.path.exists(self.systemd_path):
+                service_files.extend([
+                    file for file in os.listdir(self.systemd_path)
+                    if file.endswith(".service")
+                ])
         except OSError as e:
             print(f"Error analyzing service files: {e}")
 
@@ -59,41 +43,56 @@ class apt_utils:
             self,
             package_name: Optional[str] = None
     ) -> Union[str, Dict[str, str]]:
+        package_versions = {}
         try:
-            package_versions = {}
-            with open(
-                    self.dpkg_status_path,
-                    'r', encoding='utf-8',
-                    errors='ignore'
-            ) as status_file:
-                current_package = None
+            if not os.path.exists(self.local_db_path):
+                return {}
 
-                for line in status_file:
-                    line = line.strip()
-
-                    if line.startswith('Package:'):
-                        current_package = line.split(': ')[1]
-                        if not package_name or current_package == package_name:
-                            package_versions[current_package] = ''
-                    elif line.startswith('Version:') and current_package:
-                        if not package_name or current_package == package_name:
-                            package_versions[
-                                current_package] = line.split(': ')[
-                                1]
-                    elif line == '' and current_package:
-                        current_package = None
+            # Iterate over directories in /var/lib/pacman/local/
+            # Directory name format: package-version-release
+            # We can also read 'desc' file for precise version
+            for entry in os.listdir(self.local_db_path):
+                entry_path = os.path.join(self.local_db_path, entry)
+                if not os.path.isdir(entry_path):
+                    continue
+                
+                desc_file = os.path.join(entry_path, 'desc')
+                if os.path.exists(desc_file):
+                   name, version = self._parse_desc_file(desc_file)
+                   if name and version:
+                       if package_name:
+                           if name == package_name:
+                               return version
+                       else:
+                           package_versions[name] = version
 
             if package_name:
                 return package_versions.get(package_name, None)
             else:
                 return package_versions
 
-        except FileNotFoundError as e:
-            print(f"Error: {self.dpkg_status_path} not found. {e}")
-            return {} if not package_name else None
         except Exception as e:
             print(f"Error extracting package version: {e}")
             return {} if not package_name else None
+
+    def _parse_desc_file(self, filepath: str):
+        """Parse pacman desc file to get name and version."""
+        name = None
+        version = None
+        try:
+            with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+                for i, line in enumerate(lines):
+                    line = line.strip()
+                    if line == '%NAME%':
+                        if i + 1 < len(lines):
+                            name = lines[i+1].strip()
+                    elif line == '%VERSION%':
+                        if i + 1 < len(lines):
+                            version = lines[i+1].strip()
+        except Exception:
+            pass
+        return name, version
 
     """
     EXTRACT EXECUTABLE PATHS
@@ -101,7 +100,6 @@ class apt_utils:
 
     def extract_executable_paths(self, name_or_service_file: str) -> List[str]:
         executable_paths = []
-
         try:
             service_file_path = os.path.join(
                 self.systemd_path, name_or_service_file)
@@ -114,38 +112,33 @@ class apt_utils:
                     for match in matches:
                         args = match[1].split()
                         path = args[0].strip()
+                        # Handle paths starting with - (ignore return code)
+                        if path.startswith('-'):
+                            path = path[1:]
+                            
                         if os.path.isfile(path):
                             if os.path.islink(path):
                                 real_path = os.path.realpath(path)
                             else:
                                 real_path = os.path.abspath(path)
                             executable_paths.append(real_path)
-            else:
-                service_path_mounted = os.path.join(
-                    self.volume_path, name_or_service_file)
-
-                if os.path.exists(service_path_mounted):
-                    with open(service_path_mounted, 'r') as file:
-                        for line in file:
-                            match = re.search(
-                                r'Exec(?:Start|Stop|Pre)?=(\S+)', line)
-                            if match:
-                                executable_path = match.group(1)
-                                if os.path.islink(executable_path):
-                                    real_path = os.path.realpath(
-                                        executable_path)
-                                else:
-                                    real_path = os.path.abspath(
-                                        executable_path)
-                                executable_paths.append(real_path)
-
+                        elif path.startswith('/'):
+                             # Even if file doesn't exist (e.g. in static analysis of mounted volume), keep the path
+                             # But we should try to resolve it relative to volume_path
+                             full_path = os.path.join(self.volume_path, path.lstrip('/'))
+                             if os.path.exists(full_path):
+                                 executable_paths.append(path) # Keep original path for matching
+                             else:
+                                 # Still keep it as candidate
+                                 executable_paths.append(path)
+            
         except Exception as e:
             print(f"Error extracting executable paths: {e}")
 
         return executable_paths
 
     """
-    LISTING INFO FILES
+    LISTING INFO FILES (MAPPING FILES TO PACKAGES)
     """
 
     def analyze_info(
@@ -153,33 +146,59 @@ class apt_utils:
             exec_paths: List[str],
             package_versions: Dict[str, str] = None
     ) -> Union[List[str], Dict[str, str]]:
+        info_files = [] # List of package names
         try:
-            info_files = []
+            if not os.path.exists(self.local_db_path):
+                return []
 
-            if os.path.exists(self.info_path):
-                for file_name in os.listdir(self.info_path):
-                    if file_name.endswith(".list"):
-                        list_file_path = os.path.join(
-                            self.info_path, file_name)
-                        with open(list_file_path, 'r') as list_file:
-                            content = list_file.read()
+            for pk_dir in os.listdir(self.local_db_path):
+                 entry_path = os.path.join(self.local_db_path, pk_dir)
+                 if not os.path.isdir(entry_path):
+                     continue
+                 
+                 files_file = os.path.join(entry_path, 'files')
+                 if not os.path.exists(files_file):
+                     continue
+                     
+                 with open(files_file, 'r', encoding='utf-8', errors='ignore') as f:
+                     content = f.read()
+                     # Pacman files list usually doesn't have leading /
+                     # content is list of files
+                     
+                     matched = False
+                     for exec_path in exec_paths:
+                         # Strip leading slash to match pacman format
+                         rel_path = exec_path.lstrip('/')
+                         
+                         # Simple check: is the path in the file?
+                         # To be more robust we could split lines
+                         if rel_path in content.splitlines():
+                             # Get package name from desc or dir name
+                             # We can use _parse_desc_file to be sure
+                             desc_file = os.path.join(entry_path, 'desc')
+                             name, _ = self._parse_desc_file(desc_file)
+                             if name:
+                                 info_files.append(name)
+                                 matched = True
+                                 break
+                     if matched:
+                         # If we found an owner for one execution path, does that mean 
+                         # we stop checking this package for other paths? 
+                         # Or we stop checking other packages for this path?
+                         # The loop structure in apt_utils was:
+                         # for file_name in os.listdir...
+                         #   for exec_path in exec_paths...
+                         #     if found -> append and break (inner loop)
+                         pass
 
-                            for exec_path in exec_paths:
-                                real_path = os.path.realpath(
-                                    exec_path) if os.path.islink(
-                                    exec_path) else os.path.abspath(exec_path)
-                                if real_path in content:
-                                    info_files.append(
-                                        os.path.splitext(file_name)[0])
-                                    break
+            # Remove duplicates
+            info_files = list(set(info_files))
 
             if package_versions is not None:
                 info_files_with_versions = {}
-                for file_name in info_files:
-                    package_name = os.path.splitext(file_name)[0]
+                for package_name in info_files:
                     if package_name in package_versions:
-                        info_files_with_versions[
-                            package_name] = package_versions[package_name]
+                        info_files_with_versions[package_name] = package_versions[package_name]
                 return info_files_with_versions
             else:
                 return info_files
@@ -188,25 +207,10 @@ class apt_utils:
             print(f"Error analyzing info files: {e}")
             return [] if package_versions is None else {}
 
-    def list_info_files(self) -> List[str]:
-        try:
-            files_with_list_extension = []
-            if os.path.exists(self.info_path):
-                for filename in os.listdir(self.info_path):
-                    if filename.endswith(".list"):
-                        files_with_list_extension.append(filename)
-
-            return files_with_list_extension
-
-        except Exception as e:
-            print(f"Error listing info files: {e}")
-            return []
-
     """
     GENERATE TABLE OUTPUTS
     """
 
-    # CHROOT ANALYSIS
     def generate_table_chroot(
             self, entries: List[chroot_mode_entry_service]) -> None:
         table = Table(show_header=True, header_style="bold magenta")
@@ -227,7 +231,6 @@ class apt_utils:
             execution_time = [str(entry.ExecutionTime)]
             execution_time_str = "\n".join(execution_time)
             
-            # Format vulnerability info
             vuln_info = self._format_vulnerability_info(
                 getattr(entry, 'Vulnerabilities', [])
             )
@@ -238,42 +241,6 @@ class apt_utils:
 
         print(table)
 
-    # STATIC INFO ANALYSIS
-    def generate_table_static_info(self, packages) -> None:
-        try:
-            if not packages:
-                print("No entries to display.")
-                return
-
-            table = Table(show_header=True, header_style="bold magenta")
-            table.add_column("Package", style="dim")
-            table.add_column("Version", style="dim")
-            table.add_column("Service Name")
-            table.add_column("Executable Path")
-            table.add_column("Executable Names")
-            table.add_column("CVEs", style="red")
-
-            for package_name, entry in packages.items():
-                # Format vulnerability info
-                vuln_info = self._format_vulnerability_info(
-                    getattr(entry, 'Vulnerabilities', [])
-                )
-                
-                table.add_row(
-                    entry.Package,
-                    entry.Version,
-                    entry.ServiceName,
-                    "\n".join(entry.ExecutablePath),
-                    "\n".join(entry.ExecutableName),
-                    vuln_info
-                )
-
-            print(table)
-
-        except Exception as e:
-            print(f"Error generating output: {e}")
-
-    # STATIC SERVICE ANALYSIS
     def generate_table_static_service(
             self, entries: List[static_mode_entry_service]) -> None:
         try:
@@ -290,7 +257,6 @@ class apt_utils:
             table.add_column("CVEs", style="red")
 
             for entry in entries:
-                # Format vulnerability info
                 vuln_info = self._format_vulnerability_info(
                     getattr(entry, 'Vulnerabilities', [])
                 )

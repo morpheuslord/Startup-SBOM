@@ -159,7 +159,8 @@ def convert_to_cdx_apt_chroot(json_data: str) -> Dict[str, Any]:
     os = get_linux_distribution()
     for entry in data:
         name = entry["Package"]
-        version = entry['ServiceInformation']['Version']
+        # Version is at top level in chroot_mode_entry_service.dict() output
+        version = entry.get('Version', 'unknown')
         component = CycloneDXComponent(
             name=name,
             version=version,

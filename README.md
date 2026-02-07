@@ -91,6 +91,7 @@ For the workings and process related documentation please read the wiki page: [L
 - [x] Support for Versions
 - [x] Support for Chroot Graphical output
 - [x] Support for organized graphical output
+- [x] Support for CVE Analysis
 - [ ] Support for Pacman
 
 

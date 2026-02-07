@@ -65,3 +65,13 @@ The STATIC analysis functionality of the tool encompasses two distinct methods: 
    - **Insight Generation:** The output derived from this analysis offers insights into the installed packages on the system, their components, and relevant configuration details.
 
 For further exploration and reference, detailed documentation elucidating the STATIC analysis feature is provided through the following link: [Detailed Docs: Static Analysis](Static%20Analysis.md)
+
+**CVE Analysis:**
+
+The CVE Analysis feature provides vulnerability scanning capabilities for both Static and Chroot analysis modes.
+
+- **Vulnerability Scanning:** Checks installed packages against the National Vulnerability Database (NVD) to identify known CVEs.
+- **Severity Reporting:** Displays vulnerability counts by severity (Critical, High, Medium, Low) in the output table.
+- **Detailed JSON Output:** Includes comprehensive CVE data in the JSON output file for further processing.
+
+For detailed configuration and usage instructions, refer to: [Detailed Docs: CVE Analysis](CVE%20Analysis.md)
