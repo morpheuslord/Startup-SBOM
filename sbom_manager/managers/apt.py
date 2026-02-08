@@ -126,13 +126,27 @@ class APTAnalyzer(BaseAnalyzer):
 
     def _analyze_static_service(self, context: AnalysisContext, info_path: str, dpkg_status_path: str, result: AnalysisResult):
         print("Starting Static Service Analysis...")
-        systemd_path = self._get_systemd_path(context.volume_path)
-        service_files = self._list_service_files(systemd_path)
-        
         versions = self._extract_version(dpkg_status_path) # Get all versions
         
-        for service_file in service_files:
-            exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, service_file)
+        services_to_process = []
+        if context.init_system:
+             # Use the provided init system analyzer
+             # It returns ServiceMetadata objects with executables already parsed
+             services_to_process = context.init_system.get_all_services(context.volume_path)
+        else:
+             # Fallback to internal systemd logic (legacy support)
+             systemd_path = self._get_systemd_path(context.volume_path)
+             service_files = self._list_service_files(systemd_path)
+             for sf in service_files:
+                 exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, sf)
+                 services_to_process.append(ServiceMetadata(
+                     name=sf,
+                     executables=exec_paths,
+                     executable_names=[os.path.basename(p) for p in exec_paths]
+                 ))
+
+        for svc in services_to_process:
+            exec_paths = svc.executables
             if not exec_paths:
                 continue
                 
@@ -156,14 +170,11 @@ class APTAnalyzer(BaseAnalyzer):
                         existing_pkg.files.append(FileMetadata(path=ep))
 
                 # Add Service
-                if not any(s.name == service_file for s in result.services):
-                    result.services.append(ServiceMetadata(
-                        name=service_file, 
-                        associated_package=pkg_name,
-                        version=version,
-                        executables=exec_paths,
-                        executable_names=[os.path.basename(p) for p in exec_paths]
-                    ))
+                if not any(s.name == svc.name for s in result.services):
+                    # Update service metadata with package info
+                    svc.associated_package = pkg_name
+                    svc.version = version
+                    result.services.append(svc)
 
         self._print_table(result)
         self._save_output(context, result)

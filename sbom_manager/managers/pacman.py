@@ -117,14 +117,24 @@ class PacmanAnalyzer(BaseAnalyzer):
 
     def _analyze_static_service(self, context: AnalysisContext, local_db_path: str, result: AnalysisResult):
         print("Starting Pacman Static Service Analysis...")
-        systemd_path = self._get_systemd_path(context.volume_path)
-        service_files = self._list_service_files(systemd_path)
         
-        # Pre-load package versions?
-        # We can look them up on demand or cache.
-        
-        for service_file in service_files:
-            exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, service_file)
+        services_to_process = []
+        if context.init_system:
+             services_to_process = context.init_system.get_all_services(context.volume_path)
+        else:
+             # Fallback
+             systemd_path = self._get_systemd_path(context.volume_path)
+             service_files = self._list_service_files(systemd_path)
+             for sf in service_files:
+                 exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, sf)
+                 services_to_process.append(ServiceMetadata(
+                     name=sf,
+                     executables=exec_paths,
+                     executable_names=[os.path.basename(p) for p in exec_paths]
+                 ))
+
+        for svc in services_to_process:
+            exec_paths = svc.executables
             if not exec_paths:
                 continue
                 
@@ -132,9 +142,6 @@ class PacmanAnalyzer(BaseAnalyzer):
             owning_packages = self._find_owning_packages(local_db_path, exec_paths, context.volume_path)
             
             for pkg_name in owning_packages:
-                # Get version from db
-                # We need to find the specific dir for this package or scan all (slow)
-                # Optimization: map pkg_name to version first?
                 version = self._get_package_version(local_db_path, pkg_name)
                 
                 existing_pkg = next((p for p in result.packages if p.name == pkg_name), None)
@@ -150,14 +157,10 @@ class PacmanAnalyzer(BaseAnalyzer):
                         existing_pkg.files.append(FileMetadata(path=ep))
 
                 # Add Service
-                if not any(s.name == service_file for s in result.services):
-                    result.services.append(ServiceMetadata(
-                        name=service_file, 
-                        associated_package=pkg_name,
-                        version=version,
-                        executables=exec_paths,
-                        executable_names=[os.path.basename(p) for p in exec_paths]
-                    ))
+                if not any(s.name == svc.name for s in result.services):
+                    svc.associated_package = pkg_name
+                    svc.version = version
+                    result.services.append(svc)
 
         self._print_table(result)
         self._save_output(context, result)
@@ -171,8 +174,28 @@ class PacmanAnalyzer(BaseAnalyzer):
         if context.graphic_plot:
             plotter = TimeGraphPlot(systemd_path)
 
+        # This requires matching service name from Plot -> Service File -> Executable -> Package
+        # Similar logic to static but driven by plot names
+        
+        # We can try to use init system if available to resolve service paths, 
+        # but plot gives service names directly.
+        
         for service_name, time_str in service_times.items():
-            exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, service_name)
+            exec_paths = []
+            
+            # If we have init system, we can ask it for executables for this service name
+            if context.init_system:
+                # We need to find the specific service object?
+                # Or just use parse_service_executables if we can find the path?
+                # InitSystem doesn't have "find_service_by_name" in Base, only get_all...
+                # But SystemdAnalyzer has logic.
+                
+                # Let's just use local helper or try to find it via InitSystem's methods if we added one.
+                # For now, fallback to local helper which is fine for Systemd.
+                exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, service_name)
+            else:
+                exec_paths = self._extract_executable_paths(context.volume_path, systemd_path, service_name)
+
             if not exec_paths:
                  continue
             
