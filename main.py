@@ -152,23 +152,18 @@ def main():
 
         # 3. Execution
         context = AnalysisContext(
-        volume_path=os.path.abspath(args.volume_path),
-        output_path=args.save_file,
-        static_type=args.static_type, # mapped correctly
-        # AnalysisContext static_type field is used for 'info' vs 'service'
-        # Arg is --static-type
+            volume_path=os.path.abspath(args.volume_path),
+            output_path=args.save_file,
+            static_type=args.static_type,
+            full_scan=False,
+            cve_analysis=args.cve_analysis,
+            graphic_plot=args.info_graphic,
+            package_manager=args.pkg_mgr,
+            init_system=composite_init
+        )
         
-        full_scan=False,
-        cve_analysis=args.cve_analysis,
-        graphic_plot=args.info_graphic,
-        package_manager=args.pkg_mgr,
-        init_system=composite_init
-    )    
-        
-        # Override context field mapping if I messed up in previous edits
-        # context.static_mode was defined as "service" default in context.py
-        # Argument 'static-type' maps to it.
-        context.static_mode = args.static_type 
+        # Override context field mapping
+        context.static_type = args.static_type 
 
         if args.analysis_mode == 'static':
             selected_analyzer.analyze_static(context)
