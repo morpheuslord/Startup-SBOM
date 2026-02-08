@@ -1,11 +1,13 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Optional, Any
 
 @dataclass
 class AnalysisContext:
     volume_path: str
-    output_path: str
-    static_mode: str = "static"
-    static_type: str = "info"
-    cve_analysis: bool = False
+    output_path: Optional[str] = None
     graphic_plot: bool = False
+    full_scan: bool = False
+    static_type: str = "service" # 'info' or 'service'
+    init_system: Any = None # Instance of BaseInitAnalyzer
     package_manager: str = ""
+    cve_analysis: bool = False

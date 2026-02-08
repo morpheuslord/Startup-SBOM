@@ -119,32 +119,46 @@ class RPMAnalyzer(BaseAnalyzer):
             )
             result.packages.append(pkg_meta)
             
-            for svc in service_files:
-                svc_str = os.path.basename(svc.decode('utf-8', errors='ignore'))
-                # For static analysis, we might want to parse the service file to find executables too
-                # But the file might be in /usr/lib/systemd/system which we can access via volume_path
-                
-                # Construct full path to service
-                # We need to find where it is installed. RPM db 'filenames' gives full path usually.
-                svc_full_path_bytes = svc
-                svc_full_path = svc_full_path_bytes.decode('utf-8', errors='ignore')
-                
-                # Check if it exists on volume?
-                # svc_full_path is absolute e.g. /usr/lib/systemd/system/foo.service
-                # join with volume
-                full_path_on_disk = os.path.join(context.volume_path, svc_full_path.lstrip('/'))
-                
-                exec_paths = []
-                if os.path.exists(full_path_on_disk):
-                    exec_paths = self._extract_executable_paths(full_path_on_disk)
-                
-                result.services.append(ServiceMetadata(
-                    name=svc_str, 
-                    associated_package=name_str,
-                    version=version_str,
-                    executables=exec_paths,
-                    executable_names=[os.path.basename(p) for p in exec_paths]
-                ))
+            # Legacy Service Discovery (Fallback/Supplement)
+            # Only do this if we didn't use init_system or want to be exhaustive
+            # Generally, if init_system matches a file, we use that.
+            # But the legacy logic iterates ALL files in a package.
+            # Let's keep this but avoid duplicates.
+            
+            if not context.init_system:
+                for svc in service_files:
+                    svc_str = os.path.basename(svc.decode('utf-8', errors='ignore'))
+                    
+                    svc_full_path_bytes = svc
+                    svc_full_path = svc_full_path_bytes.decode('utf-8', errors='ignore')
+                    full_path_on_disk = os.path.join(context.volume_path, svc_full_path.lstrip('/'))
+                    
+                    exec_paths = []
+                    if os.path.exists(full_path_on_disk):
+                        exec_paths = self._extract_executable_paths(full_path_on_disk)
+                    
+                    # Add Service if not exists
+                    if not any(s.name == svc_str for s in result.services):
+                         result.services.append(ServiceMetadata(
+                            name=svc_str, 
+                            associated_package=name_str,
+                            version=version_str,
+                            executables=exec_paths,
+                            executable_names=[os.path.basename(p) for p in exec_paths]
+                        ))
+        
+        # Init System Analysis
+        if context.init_system:
+             services = context.init_system.get_all_services(context.volume_path)
+             for svc in services:
+                 if any(s.name == svc.name for s in result.services):
+                     continue # Already found via package scan logic?
+                 
+                 # Find owner
+                 owner, ver = self._find_owning_package(ts, svc.path, context.volume_path)
+                 svc.associated_package = owner
+                 svc.version = ver
+                 result.services.append(svc)
 
     def _analyze_chroot_services(self, context: AnalysisContext, service_times: Dict[str, str], result: AnalysisResult):
         print("Starting Chroot Service Analysis...")
@@ -168,21 +182,7 @@ class RPMAnalyzer(BaseAnalyzer):
             version = "unknown"
             
             if ts:
-                 # Query RPM DB for file
-                 # Need full path of service file on the volume?
-                 # RPM DB stores paths as they are installed (e.g. /usr/lib/systemd/system/foo.service)
-                 # We need to find where the service file is.
-                 service_path = self._find_service_path(context.volume_path, service_name)
-                 if service_path:
-                      # Strip volume path
-                      rel_path = os.path.relpath(service_path, context.volume_path)
-                      rel_path = "/" + rel_path.replace("\\", "/") # Linux path
-                      
-                      mi = ts.dbMatch('basenames', rel_path)
-                      for hdr in mi:
-                          pkg_name = hdr['name'].decode('utf-8')
-                          version = hdr['version'].decode('utf-8')
-                          break
+                 pkg_name, version = self._find_owning_package(ts, self._find_service_path(context.volume_path, service_name), context.volume_path)
 
             # Create/Get Package
             existing_pkg = next((p for p in result.packages if p.name == pkg_name), None)
@@ -300,17 +300,17 @@ class RPMAnalyzer(BaseAnalyzer):
                         service_times[match.group(1)] = match.group(2)
         return service_times
 
-    def _extract_executable_paths(self, service_file_path: str) -> List[str]:
-        # Helper to extract ExecStart/etc from a service file path
-        paths = []
-        if os.path.exists(service_file_path):
-             with open(service_file_path, 'r', errors='ignore') as f:
-                 content = f.read()
-                 matches = re.findall(r'(Exec(?:Start|Stop|Pre)?=)(.+)', content)
-                 for match in matches:
-                     args = match[1].split()
-                     path = args[0].strip()
-                     if path.startswith('-'): path = path[1:]
-                     # Return as found in service file (absolute usually)
-                     paths.append(path)
         return paths
+
+    def _find_owning_package(self, ts, file_path_on_disk: Optional[str], volume_path: str):
+        if not ts or not file_path_on_disk: 
+            return "unknown", "unknown"
+        try:
+            rel = os.path.relpath(file_path_on_disk, volume_path)
+            linux_path = "/" + rel.replace("\\", "/")
+            mi = ts.dbMatch('basenames', linux_path)
+            for hdr in mi:
+                return hdr['name'].decode('utf-8'), hdr['version'].decode('utf-8')
+        except Exception:
+            pass
+        return "unknown", "unknown"
