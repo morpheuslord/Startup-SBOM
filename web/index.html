@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SBOM Scanner — Dashboard</title>
+    <meta name="description" content="Distributed SBOM scanning dashboard with real-time vulnerability monitoring">
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <!-- Lucide Icons (lightweight SVG icon library) -->
+    <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
+</head>
+
+<body>
+    <!-- ─── Navigation ─────────────────────────────────────── -->
+    <nav>
+        <div class="nav-brand">
+            <div class="nav-logo">
+                <i data-lucide="shield-check"></i>
+            </div>
+            <div>
+                <h1>SBOM Scanner</h1>
+                <span class="nav-subtitle">Security Dashboard</span>
+            </div>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="active" id="nav-dashboard">
+                <i data-lucide="layout-dashboard" class="nav-link-icon"></i>
+                Dashboard
+            </a>
+            <a href="#agents" id="nav-agents">
+                <i data-lucide="server" class="nav-link-icon"></i>
+                Agents
+            </a>
+            <a href="#scans" id="nav-scans">
+                <i data-lucide="scan-search" class="nav-link-icon"></i>
+                Scans
+            </a>
+        </div>
+        <div class="nav-status">
+            <span class="pulse-dot"></span>
+            <span id="connection-status">Connecting…</span>
+        </div>
+    </nav>
+
+    <main>
+        <!-- ─── Stats Cards ────────────────────────────────── -->
+        <section class="stats-grid" id="stats-section">
+            <div class="stat-card card-agents">
+                <div class="stat-icon-wrap">
+                    <i data-lucide="cpu" class="stat-icon"></i>
+                </div>
+                <div class="stat-content">
+                    <h3>Total Agents</h3>
+                    <p class="stat-value" id="total-agents">–</p>
+                    <p class="stat-sub"><span id="active-agents">0</span> active now</p>
+                </div>
+                <div class="stat-decoration"></div>
+            </div>
+            <div class="stat-card card-scans">
+                <div class="stat-icon-wrap">
+                    <i data-lucide="radar" class="stat-icon"></i>
+                </div>
+                <div class="stat-content">
+                    <h3>Total Scans</h3>
+                    <p class="stat-value" id="total-scans">–</p>
+                    <p class="stat-sub"><span id="scans-24h">0</span> last 24h</p>
+                </div>
+                <div class="stat-decoration"></div>
+            </div>
+            <div class="stat-card card-completed">
+                <div class="stat-icon-wrap">
+                    <i data-lucide="check-circle-2" class="stat-icon"></i>
+                </div>
+                <div class="stat-content">
+                    <h3>Completed</h3>
+                    <p class="stat-value" id="completed-scans">–</p>
+                    <p class="stat-sub">scans finished</p>
+                </div>
+                <div class="stat-decoration"></div>
+            </div>
+            <div class="stat-card card-vulns">
+                <div class="stat-icon-wrap">
+                    <i data-lucide="alert-triangle" class="stat-icon"></i>
+                </div>
+                <div class="stat-content">
+                    <h3>Vulnerabilities</h3>
+                    <p class="stat-value" id="total-vulns">–</p>
+                    <p class="stat-sub"><span id="critical-vulns">0</span> critical</p>
+                </div>
+                <div class="stat-decoration"></div>
+            </div>
+        </section>
+
+        <!-- ─── Recent Scans ───────────────────────────────── -->
+        <section class="panel" id="scans-section">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <i data-lucide="clock" class="panel-icon"></i>
+                    <h2>Recent Scans</h2>
+                </div>
+                <button class="btn-ghost" onclick="if(typeof updateRecentScans==='function')updateRecentScans()"
+                    title="Refresh">
+                    <i data-lucide="refresh-cw" class="btn-ghost-icon"></i>
+                    Refresh
+                </button>
+            </div>
+            <div class="table-wrap">
+                <table id="recent-scans">
+                    <thead>
+                        <tr>
+                            <th>Scan ID</th>
+                            <th>Agent</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Started</th>
+                            <th>Duration</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td colspan="6" class="state-msg">Loading…</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ─── Trigger Scan ───────────────────────────────── -->
+        <section class="panel" id="trigger-section">
+            <div class="panel-header">
+                <div class="panel-title">
+                    <i data-lucide="play-circle" class="panel-icon"></i>
+                    <h2>Trigger New Scan</h2>
+                </div>
+            </div>
+            <form id="trigger-form">
+                <div class="form-row">
+                    <label>
+                        <span class="form-label">
+                            <i data-lucide="server" class="form-label-icon"></i>
+                            Target Agent
+                        </span>
+                        <select id="agent-select" required>
+                            <option value="">Loading agents…</option>
+                        </select>
+                    </label>
+                    <label>
+                        <span class="form-label">
+                            <i data-lucide="package" class="form-label-icon"></i>
+                            Scan Type
+                        </span>
+                        <select id="scan-type" required>
+                            <option value="apt">APT Packages (Debian/Ubuntu)</option>
+                            <option value="rpm">RPM Packages (RHEL/CentOS)</option>
+                            <option value="docker">Docker Images (Trivy)</option>
+                        </select>
+                    </label>
+                </div>
+                <button type="submit" class="btn-primary" id="trigger-btn">
+                    <i data-lucide="zap" class="btn-icon-svg"></i>
+                    Trigger Scan
+                </button>
+            </form>
+            <div id="trigger-status" hidden></div>
+        </section>
+
+        <!-- ─── Scan Detail Modal ──────────────────────────── -->
+        <div class="modal-overlay" id="scan-modal" hidden>
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="panel-title">
+                        <i data-lucide="file-search" class="panel-icon"></i>
+                        <h2>Scan Details</h2>
+                    </div>
+                    <button class="btn-ghost" onclick="closeScanModal()">
+                        <i data-lucide="x" class="btn-ghost-icon"></i>
+                    </button>
+                </div>
+                <div class="modal-body" id="scan-modal-body">
+                    Loading…
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="footer-inner">
+            <span><i data-lucide="shield-check" class="footer-icon"></i> SBOM Scanner v1.0</span>
+            <span class="footer-sep">·</span>
+            <span>Last refresh <span id="last-update">–</span></span>
+        </div>
+    </footer>
+
+    <!-- Load app.js with error detection -->
+    <script>window.__SBOM_LOADED = false;</script>
+    <script src="/static/app.js"
+        onerror="document.getElementById('connection-status').textContent='JS load failed'"></script>
+    <script>
+        // Initialize Lucide icons
+        if (typeof lucide !== 'undefined') { lucide.createIcons(); }
+        // Fallback if app.js didn't execute
+        if (!window.__SBOM_LOADED) {
+            document.getElementById('connection-status').textContent = 'JS init failed';
+            fetch('/api/stats').then(function (r) { return r.json() }).then(function (s) {
+                document.getElementById('total-agents').textContent = s.total_agents || 0;
+                document.getElementById('active-agents').textContent = s.active_agents || 0;
+                document.getElementById('total-scans').textContent = s.total_scans || 0;
+                document.getElementById('total-vulns').textContent = s.total_vulnerabilities || 0;
+                document.getElementById('connection-status').textContent = 'Fallback mode';
+            }).catch(function (e) { console.error('[SBOM] Fallback failed:', e); });
+            fetch('/api/agents').then(function (r) { return r.json() }).then(function (agents) {
+                var sel = document.getElementById('agent-select');
+                if (agents && agents.length > 0) {
+                    sel.innerHTML = '';
+                    agents.forEach(function (a) {
+                        var opt = document.createElement('option');
+                        opt.value = a.agent_id;
+                        opt.textContent = a.hostname || a.agent_id;
+                        sel.appendChild(opt);
+                    });
+                } else { sel.innerHTML = '<option value="">No agents registered</option>'; }
+            }).catch(function (e) { console.error('[SBOM] Agent fallback failed:', e); });
+        }
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,14 @@
+agent:
+  id: "agent-001"
+  name: "Development Agent"
+
+server:
+  url: "http://localhost:8000"
+
+# How often to poll for work (seconds)
+poll_interval: 30
+
+# Enabled scanners: apt, rpm, docker
+scanners:
+  - apt
+  - docker
