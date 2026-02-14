@@ -23,12 +23,48 @@ class SBOMAgent:
         self.agent_id = self.config.id
         self.server_url = self.config.server_url.rstrip("/")
         self.poll_interval = self.config.poll_interval
-        self.enabled_scanners = self.config.scanners
+        
+        # Auto-detect scanners
+        self.enabled_scanners = self._detect_scanners()
 
         print(f"[{self._ts()}] SBOM Agent initialized")
         print(f"  Agent ID : {self.agent_id}")
         print(f"  Server   : {self.server_url}")
         print(f"  Scanners : {', '.join(self.enabled_scanners)}")
+
+    def _detect_scanners(self) -> List[str]:
+        scanners = []
+        # Check for APT
+        if self._command_exists("dpkg-query"):
+            scanners.append("apt")
+        # Check for RPM
+        if self._command_exists("rpm"):
+            scanners.append("rpm")
+        # Check for Docker
+        if self._command_exists("docker"):
+            scanners.append("docker")
+        
+        if not scanners:
+            print(f"[{self._ts()}] WARNING: No supported package managers or tools found!")
+            
+        return scanners
+
+    def _command_exists(self, cmd: str) -> bool:
+        try:
+            subprocess.run(["which", cmd], capture_output=True, check=True)
+            return True
+        except subprocess.CalledProcessError:
+            return False
+        except FileNotFoundError:
+            # 'which' command might not exist on some minimal containers, 
+            # try running the command itself with --version or similar if applicable
+            # But standard linux usually has 'which' or 'command -v'.
+            # Fallback: try calling the command directly
+            try:
+                subprocess.run([cmd, "--version"], capture_output=True, check=True)
+                return True
+            except Exception:
+                return False
 
     # ── helpers ──────────────────────────────────────────────────────
     def _ts(self) -> str:

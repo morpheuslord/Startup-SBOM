@@ -24,7 +24,7 @@ ENV PATH="/root/.local/bin:$PATH"
 WORKDIR /app
 
 # Copy configuration
-COPY pyproject.toml poetry.lock* ./
+COPY pyproject.toml poetry.lock* README.md ./
 
 # Check if lock file exists, if not generate it
 RUN if [ ! -f poetry.lock ]; then poetry lock; fi

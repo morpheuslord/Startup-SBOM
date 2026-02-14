@@ -14,7 +14,7 @@ class AgentConfig(BaseModel):
     hostname: Optional[str] = None
     server_url: str = "http://localhost:8000"
     poll_interval: int = 30
-    scanners: List[str] = ["apt", "docker"]
+    scanners: Optional[List[str]] = None
 
 class SBOMConfig(BaseModel):
     server: ServerConfig = ServerConfig()

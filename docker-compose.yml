@@ -21,8 +21,7 @@ services:
       context: .
       dockerfile: Dockerfile.agent
     container_name: sbom-agent-01
-    depends_on:
-      - sbom-server
+
     volumes:
       - ./config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock
