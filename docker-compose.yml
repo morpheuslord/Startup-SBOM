@@ -13,7 +13,7 @@ services:
       - ./data:/app/data
       - ./database:/app/database
     environment:
-      - SBOM_CONFIG=/app/config/sbom.conf
+      - SBOM_SERVER_CONFIG=/app/config/server.conf
     restart: always
 
   sbom-agent:
@@ -27,5 +27,5 @@ services:
       - ./config:/app/config
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
-      - SBOM_CONFIG=/app/config/sbom.conf
+      - SBOM_AGENT_CONFIG=/app/config/agent.conf
     restart: always

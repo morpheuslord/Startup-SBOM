@@ -60,26 +60,30 @@ Prerequisites: Python 3.11+, Poetry
 
 ## Configuration
 
-Configuration is managed via `config/sbom.conf` or environment variables.
+Configuration is managed via separate files in `config/` or environment variables.
 
-### Example `config/sbom.conf`
+### Example `config/server.conf`
 ```yaml
-server:
-  host: "0.0.0.0"
-  port: 8000
-  db_path: "data/sbom.db"
+host: "0.0.0.0"
+port: 8000
+db_path: "data/sbom.db"
+```
 
-agent:
-  id: "agent-01"
-  server_url: "http://localhost:8000"
-  poll_interval: 30
-  scanners:
-    - "apt"
-    - "docker"
+### Example `config/agent.conf`
+```yaml
+id: "agent-01"
+hostname: "docker-agent"
+server_url: "http://localhost:8000"
+poll_interval: 30
+scanners:
+  - "apt"
+  - "docker"
 ```
 
 ### Environment Variables
-- `SBOM_CONFIG`: Path to config file.
+- `SBOM_SERVER_CONFIG`: Path to server config file.
+- `SBOM_AGENT_CONFIG`: Path to agent config file.
+- `SBOM_CONFIG`: Path to unified config file (legacy support).
 - `SBOM_HOST`: Server host (default: 0.0.0.0).
 - `SBOM_PORT`: Server port (default: 8000).
 
