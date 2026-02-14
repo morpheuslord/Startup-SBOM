@@ -4,7 +4,6 @@ SBOM Scanner Agent
 Polls server for work and executes scans
 """
 import time
-import yaml
 import requests
 import socket
 import platform
@@ -15,16 +14,16 @@ from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
 
+from sbom_core.config import settings
+
 
 class SBOMAgent:
-    def __init__(self, config_path: str):
-        with open(config_path) as f:
-            self.config = yaml.safe_load(f)
-
-        self.agent_id = self.config["agent"]["id"]
-        self.server_url = self.config["server"]["url"].rstrip("/")
-        self.poll_interval = self.config.get("poll_interval", 30)
-        self.enabled_scanners = self.config.get("scanners", ["apt"])
+    def __init__(self):
+        self.config = settings.agent
+        self.agent_id = self.config.id
+        self.server_url = self.config.server_url.rstrip("/")
+        self.poll_interval = self.config.poll_interval
+        self.enabled_scanners = self.config.scanners
 
         print(f"[{self._ts()}] SBOM Agent initialized")
         print(f"  Agent ID : {self.agent_id}")
@@ -49,7 +48,7 @@ class SBOMAgent:
     def get_system_info(self) -> Dict:
         return {
             "agent_id": self.agent_id,
-            "hostname": socket.gethostname(),
+            "hostname": self.config.hostname or socket.gethostname(),
             "ip_address": socket.gethostbyname(socket.gethostname()),
             "os_info": platform.platform(),
         }
@@ -92,7 +91,7 @@ class SBOMAgent:
                 return {"error": "dpkg-query not found", "packages": []}
 
             result = subprocess.run(
-                ["dpkg-query", "-W", "-f=${Package}|${Version}|${Architecture}\n"],
+                ["dpkg-query", "-W", "-f=${Package}|${Version}|${Architecture}\\n"],
                 capture_output=True,
                 text=True,
                 check=True,
@@ -132,13 +131,13 @@ class SBOMAgent:
                 return {"error": "rpm not found", "packages": []}
 
             result = subprocess.run(
-                ["rpm", "-qa", "--queryformat", "%{NAME}|%{VERSION}-%{RELEASE}|%{ARCH}\n"],
+                ["rpm", "-qa", "--queryformat", "%{NAME}|%{VERSION}-%{RELEASE}|%{ARCH}\\n"],
                 capture_output=True,
                 text=True,
                 check=True,
             )
 
-            for line in result.stdout.strip().split("\n"):
+            for line in result.stdout.strip().split("\\n"):
                 if not line:
                     continue
                 parts = line.split("|")
@@ -189,7 +188,7 @@ class SBOMAgent:
 
             image_names = [
                 line.strip()
-                for line in result.stdout.strip().split("\n")
+                for line in result.stdout.strip().split("\\n")
                 if line and "<none>" not in line
             ]
 
@@ -309,16 +308,19 @@ class SBOMAgent:
                 time.sleep(self.poll_interval)
 
         except KeyboardInterrupt:
-            print(f"\n[{self._ts()}] Shutting down...")
+            print(f"\\n[{self._ts()}] Shutting down...")
         except Exception as e:
             print(f"[{self._ts()}] Fatal error: {e}")
             raise
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python agent.py <config.yaml>")
+def start():
+    try:
+        agent = SBOMAgent()
+        agent.run()
+    except Exception as e:
+        print(f"Fatal error: {e}")
         sys.exit(1)
 
-    agent = SBOMAgent(sys.argv[1])
-    agent.run()
+if __name__ == "__main__":
+    start()

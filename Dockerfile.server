@@ -1,0 +1,40 @@
+# Dockerfile.server
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:$PATH"
+
+WORKDIR /app
+
+# Copy configuration
+COPY pyproject.toml poetry.lock* ./
+
+# Check if lock file exists, if not generate it
+RUN if [ ! -f poetry.lock ]; then poetry lock; fi
+
+# Install dependencies only (no root project)
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --no-root
+
+# Copy source code
+COPY src/ ./src/
+COPY web/ ./web/
+COPY database/ ./database/
+# Install the project itself
+RUN poetry install --no-interaction --no-ansi
+
+# Configuration volume
+VOLUME ["/app/config", "/app/data"]
+
+ENV PYTHONPATH=/app/src
+ENV SBOM_Config=/app/config/sbom.conf
+
+EXPOSE 8000
+
+CMD ["sbom-server"]

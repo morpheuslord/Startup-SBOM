@@ -1,0 +1,47 @@
+# Dockerfile.agent
+FROM python:3.11-slim
+
+# Install system dependencies and scanning tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    lsb-release \
+    dpkg \
+    rpm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Docker CLI (for calling docker commands on host socket)
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh
+
+# Install Trivy
+RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
+ENV PATH="/root/.local/bin:$PATH"
+
+WORKDIR /app
+
+# Copy configuration
+COPY pyproject.toml poetry.lock* ./
+
+# Check if lock file exists, if not generate it
+RUN if [ ! -f poetry.lock ]; then poetry lock; fi
+
+# Install dependencies only
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-interaction --no-ansi --no-root
+
+# Copy source code
+COPY src/ ./src/
+# Install the project itself
+RUN poetry install --no-interaction --no-ansi
+
+# Configuration volume
+VOLUME ["/app/config"]
+
+ENV PYTHONPATH=/app/src
+ENV SBOM_CONFIG=/app/config/sbom.conf
+
+CMD ["sbom-agent"]

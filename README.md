@@ -1,76 +1,90 @@
 # Startup-SBOM
 
-Startup-SBOM is a universal utility designed to provide an insider view of which packages are executed during the startup of a Linux system or within a Docker container.
-
-By analyzing service files, init scripts, and container entrypoints, the tool maps every booting process to its originating package, providing a clear perspective on actual system execution.
+Startup-SBOM is a distributed Software Bill of Materials (SBOM) scanning system designed to analyze packages and services on Linux systems and Docker containers. It now features a client-server architecture with a centralized dashboard and distributed agents.
 
 ## Features
-- **Universal Init Support:** Automatically detects and analyzes Systemd, SysVinit, and OpenRC.
-- **Docker Support:** Analyze running or stopped containers directly using `--docker`.
-- **Multi-Package Manager Support:** Supports APT (Debian/Ubuntu), RPM (Fedora/CentOS/RHEL), Pacman (Arch), and APK (Alpine).
-- **CVE Analysis:** Integrated vulnerability scanning using NVD data.
-- **Graphical Output:** Generates service dependency flowcharts.
-- **CycloneDX Export:** Generate industry-standard SBOMs.
 
-## Installation
-The packages needed are mentioned in the `requirements.txt` file and can be installed using pip:
+- **Distributed Architecture**: Centralized server with multiple scanning agents.
+- **Universal Init Support**: Automatically detects and analyzes Systemd, SysVinit, and OpenRC.
+- **Docker Support**: Analyze running or stopped containers directly using `--docker`.
+- **Multi-Package Manager Support**: Supports APT (Debian/Ubuntu), RPM (Fedora/CentOS/RHEL), Pacman (Arch), and APK (Alpine).
+- **CVE Analysis**: Integrated vulnerability scanning using NVD data.
+- **Web Dashboard**: Real-time view of agents, scans, packages, and vulnerabilities.
+- **CycloneDX Export**: Generate industry-standard SBOMs.
+
+## Project Structure
+
+- `src/sbom_server`: FastAPI-based central server and dashboard.
+- `src/sbom_agent`: Agent service that runs scans and reports to the server.
+- `src/sbom_cli`: Command-line interface for standalone operations.
+- `src/sbom_core`: Shared logic, configuration, and models.
+- `config/`: Configuration files (`sbom.conf`, `sbom.yaml`).
+
+## Getting Started
+
+### 1. Using Docker (Recommended)
+
+The easiest way to run the full system is using Docker Compose.
+
 ```bash
-pip3 install -r requirements.txt
+docker-compose up --build
 ```
 
-## Usage
+- **Server Dashboard**: http://localhost:8000
+- **API Docs**: http://localhost:8000/docs
 
-| Argument          | Description                                                                                                      |
-|-------------------|-------------------|
-| `--analysis-mode` | `static` or `chroot`. Default is `static`.                                                                       |
-| `--static-type`   | `info` (Package DB) or `service` (Active Services). Default is `info`.                                           |
-| `--volume-path`   | Path to a mounted filesystem. Default is `/mnt`.                                                                 |
-| `--docker`        | Docker Container ID or Name to analyze.                                                                          |
-| `--save-file`     | Path to save output (JSON/CycloneDX).                                                                            |
-| `--info-graphic`  | Generate visual plots for CHROOT analysis. Default is `True`.                                                    |
-| `--pkg-mgr`       | Explicitly specify package manager (apt, rpm, pacman, apk).                                                     |
-| `--cve-analysis`  | Enable CVE vulnerability scanning.                                                                               |
+### 2. Manual Installation (Development)
 
-### Usage Examples
+Prerequisites: Python 3.11+, Poetry
 
-#### 1. Analyze a Docker Container
-```bash
-python3 main.py --docker my-container --cve-analysis --save-file sbom.json
+1. **Install Dependencies**:
+   ```bash
+   poetry install
+   ```
+
+2. **Run Server**:
+   ```bash
+   poetry run sbom-server
+   ```
+
+3. **Run Agent**:
+   ```bash
+   # In a separate terminal
+   poetry run sbom-agent
+   ```
+
+4. **Run CLI Tool** (Legacy/Standalone Mode):
+   ```bash
+   poetry run sbom-cli --help
+   ```
+
+## Configuration
+
+Configuration is managed via `config/sbom.conf` or environment variables.
+
+### Example `config/sbom.conf`
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8000
+  db_path: "data/sbom.db"
+
+agent:
+  id: "agent-01"
+  server_url: "http://localhost:8000"
+  poll_interval: 30
+  scanners:
+    - "apt"
+    - "docker"
 ```
 
-#### 2. Analyze a Mounted Volume (Static Service Mode)
-```bash
-python3 main.py --volume-path /mnt/target_root --static-type service --save-file output.json
-```
-
-#### 3. Chroot Analysis with Graphical Output
-```bash
-python3 main.py --analysis-mode chroot --volume-path /mnt/target_root --info-graphic True
-```
-
-## Supported Combinations
-
-| OS Family | Package Manager | Init System |
-|-----------|-----------------|-------------|
-| Debian/Ubuntu | APT | Systemd, SysVinit |
-| RHEL/CentOS | RPM | Systemd |
-| Arch Linux | Pacman | Systemd |
-| Alpine Linux | APK | OpenRC |
-| Docker Containers | (Any) | Docker Entrypoint + Internal Init |
+### Environment Variables
+- `SBOM_CONFIG`: Path to config file.
+- `SBOM_HOST`: Server host (default: 0.0.0.0).
+- `SBOM_PORT`: Server port (default: 8000).
 
 ## Inner Workings
 For detailed documentation on the methodology and process, please visit the [Wiki](https://github.com/morpheuslord/Startup-SBOM/wiki).
 
-## TODO
-- [x] Support for RPM
-- [x] Support for APT
-- [x] Support for Pacman
-- [x] Support for APK (Alpine)
-- [x] Support for Universal Init (Systemd, SysVinit, OpenRC)
-- [x] Support for Docker Container Analysis
-- [x] Support for CVE Analysis
-- [x] Support for organized graphical output
-- [x] Support for CycloneDX Export
-
-## Ideas and Discussions
-Ideas regarding this topic are welcome in the discussions page.
+## License
+MIT License

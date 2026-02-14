@@ -14,11 +14,11 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
 
-from server.database import get_db, init_database, dict_from_row
-from server.config import HOST, PORT
+from sbom_server.database import get_db, init_database, dict_from_row
+from sbom_core.config import settings
 
 # ─── Paths ──────────────────────────────────────────────────────────────
-WEB_DIR = Path(__file__).resolve().parent.parent / "web"
+WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
 
 # Global list for SSE connections
 active_sse_connections: List[asyncio.Queue] = []
@@ -28,9 +28,16 @@ active_sse_connections: List[asyncio.Queue] = []
 @asynccontextmanager
 async def lifespan(app):
     # Startup
-    if not Path("database/sbom.db").exists():
+    db_path = Path(settings.server.db_path)
+    if not db_path.exists():
+        # Ensure directory exists
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         init_database()
-    print(f"Server starting on http://{HOST}:{PORT}")
+        print(f"Database initialized at {db_path}")
+    else:
+        print(f"Database already exists at {db_path}")
+        
+    print(f"Server starting on http://{settings.server.host}:{settings.server.port}")
     yield
     # Shutdown
     print("Server shutting down...")
@@ -605,14 +612,14 @@ async def sse_endpoint():
 
 
 # ─── Entry Point ────────────────────────────────────────────────────────
-if __name__ == "__main__":
-    if not Path("database/sbom.db").exists():
-        init_database()
-
+def start():
     uvicorn.run(
-        "server.main:app",
-        host=HOST,
-        port=PORT,
+        "sbom_server.main:app",
+        host=settings.server.host,
+        port=settings.server.port,
         reload=True,
         log_level="info",
     )
+
+if __name__ == "__main__":
+    start()

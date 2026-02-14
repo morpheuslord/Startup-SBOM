@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  sbom-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: sbom-server
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./database:/app/database
+    environment:
+      - SBOM_CONFIG=/app/config/sbom.conf
+    restart: always
+
+  sbom-agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: sbom-agent-01
+    depends_on:
+      - sbom-server
+    volumes:
+      - ./config:/app/config
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - SBOM_CONFIG=/app/config/sbom.conf
+    restart: always

@@ -1,0 +1,39 @@
+[tool.poetry]
+name = "startup-sbom"
+version = "0.1.0"
+description = "Starting SBOM tool for analyzing startup processes and containers"
+authors = ["Chiranjeevi G <chiranjeevi.naidu@proton.me>"]
+readme = "README.md"
+packages = [
+    { include = "sbom_core", from = "src" },
+    { include = "sbom_server", from = "src" },
+    { include = "sbom_agent", from = "src" },
+    { include = "sbom_cli", from = "src" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+rich = "^13.4.2"
+pydantic = "^2.6.4"
+graphviz = "^0.20.1"
+# rpm = "^0.1.0" # RPM binding often system dependent, might be optional
+nvdlib = "^0.7.7"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+python-multipart = "^0.0.9"
+pyyaml = "^6.0.1"
+requests = "^2.31.0"
+python-jose = {extras = ["cryptography"], version = "^3.3.0"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+httpx = "<0.28"
+
+[tool.poetry.scripts]
+sbom-server = "sbom_server.main:start"
+sbom-agent = "sbom_agent.service:start"
+sbom-cli = "sbom_cli.main:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
