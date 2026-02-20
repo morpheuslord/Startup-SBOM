@@ -107,9 +107,19 @@ def load_config() -> SBOMConfig:
         if not agent_data:
             agent_data = unified.get("agent", {})
 
-    # Final validation/forcing for Docker
+    # Env overrides for server bind (README documents SBOM_HOST, SBOM_PORT)
+    server_data["host"] = os.getenv("SBOM_HOST", server_data.get("host", "0.0.0.0"))
+    server_data["port"] = int(os.getenv("SBOM_PORT", str(server_data.get("port", 8000))))
+
+    # In Docker, always bind to 0.0.0.0 (never bind to host IP or only localhost)
     if is_docker():
-        if not server_data.get("host") or server_data.get("host") in ("127.0.0.1", "localhost"):
+        bind_host = server_data.get("host", "0.0.0.0")
+        if bind_host != "0.0.0.0":
+            if bind_host not in ("127.0.0.1", "localhost"):
+                import logging
+                logging.getLogger("sbom_core.config").warning(
+                    "Docker: bind host %r is not valid in container; using 0.0.0.0", bind_host
+                )
             server_data["host"] = "0.0.0.0"
 
     return SBOMConfig(

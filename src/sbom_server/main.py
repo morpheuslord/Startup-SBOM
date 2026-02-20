@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
+import errno
 import logging
 import json
 import mimetypes
@@ -875,13 +876,34 @@ def start():
     logger.info(f"  Reload    : {do_reload}")
     logger.info("──────────────────────────────────────────────────")
 
-    uvicorn.run(
-        "sbom_server.main:app",
-        host=settings.server.host,
-        port=settings.server.port,
-        reload=do_reload,
-        log_level="info",
-    )
+    host = settings.server.host
+    port = settings.server.port
+    try:
+        uvicorn.run(
+            "sbom_server.main:app",
+            host=host,
+            port=port,
+            reload=do_reload,
+            log_level="info",
+        )
+    except OSError as e:
+        if getattr(e, "errno", None) == errno.EADDRNOTAVAIL and host == "0.0.0.0":
+            logger.warning(
+                "Bind to 0.0.0.0 failed (%s); retrying on 127.0.0.1 (localhost only)", e
+            )
+            uvicorn.run(
+                "sbom_server.main:app",
+                host="127.0.0.1",
+                port=port,
+                reload=do_reload,
+                log_level="info",
+            )
+        else:
+            logger.error(
+                "Server bind failed: %s. Try SBOM_HOST=0.0.0.0 (Docker) or SBOM_HOST=127.0.0.1 (host).",
+                e,
+            )
+            raise
 
 if __name__ == "__main__":
     start()

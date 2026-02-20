@@ -558,7 +558,19 @@ class SBOMAgent:
     def run(self):
         logger.info("Starting SBOM Agent...")
 
-        if not self.register():
+        max_attempts = 10
+        base_delay = 5
+        for attempt in range(1, max_attempts + 1):
+            if self.register():
+                break
+            if attempt < max_attempts:
+                delay = base_delay * (2 ** (attempt - 1))
+                logger.warning(
+                    "Registration attempt %d/%d failed; retrying in %ds...",
+                    attempt, max_attempts, delay,
+                )
+                time.sleep(delay)
+        else:
             logger.error("Failed to register. Exiting.")
             return
 
