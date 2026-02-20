@@ -878,6 +878,7 @@ def start():
 
     host = settings.server.host
     port = settings.server.port
+    loop_mode = "asyncio" if in_docker else "auto"
     try:
         uvicorn.run(
             "sbom_server.main:app",
@@ -885,25 +886,20 @@ def start():
             port=port,
             reload=do_reload,
             log_level="info",
+            loop=loop_mode,
         )
     except OSError as e:
         if getattr(e, "errno", None) == errno.EADDRNOTAVAIL and host == "0.0.0.0":
             logger.warning(
-                "Bind to 0.0.0.0 failed (%s); retrying on 127.0.0.1 (localhost only)", e
-            )
-            uvicorn.run(
-                "sbom_server.main:app",
-                host="127.0.0.1",
-                port=port,
-                reload=do_reload,
-                log_level="info",
+                "Bind to 0.0.0.0 failed (%s). Set SBOM_HOST=127.0.0.1 and restart, or SBOM_HOST=0.0.0.0 in Docker.",
+                e,
             )
         else:
             logger.error(
                 "Server bind failed: %s. Try SBOM_HOST=0.0.0.0 (Docker) or SBOM_HOST=127.0.0.1 (host).",
                 e,
             )
-            raise
+        raise
 
 if __name__ == "__main__":
     start()
