@@ -25,14 +25,17 @@ class SBOMConfig(BaseModel):
 def load_config_data(env_var: str, default_paths: List[Path]) -> Dict[str, Any]:
     """Helper to load config from env var or list of paths"""
     path = os.getenv(env_var)
-    if path and Path(path).exists():
-        try:
-            with open(path, "r") as f:
-                return yaml.safe_load(f) or {}
-        except Exception as e:
-            print(f"Error loading config from {path}: {e}")
-            return {}
-            
+    if path:
+        p = Path(path)
+        if p.exists():
+            try:
+                with open(p, "r") as f:
+                    return yaml.safe_load(f) or {}
+            except Exception as e:
+                print(f"Error loading config from {path}: {e}")
+        else:
+            print(f"File from {env_var} not found: {path}")
+
     for p in default_paths:
         if p.exists():
             try:
@@ -40,8 +43,16 @@ def load_config_data(env_var: str, default_paths: List[Path]) -> Dict[str, Any]:
                     return yaml.safe_load(f) or {}
             except Exception as e:
                 print(f"Error loading config from {p}: {e}")
-            return {}
+                continue
     return {}
+
+def is_docker() -> bool:
+    """Check if we are running inside a container"""
+    if os.getenv("IS_DOCKER") == "true":
+        return True
+    if Path("/.dockerenv").exists():
+        return True
+    return False
 
 def load_config() -> SBOMConfig:
     base_dir = Path(__file__).resolve().parent.parent.parent
@@ -95,7 +106,12 @@ def load_config() -> SBOMConfig:
             server_data = unified.get("server", {})
         if not agent_data:
             agent_data = unified.get("agent", {})
-            
+
+    # Final validation/forcing for Docker
+    if is_docker():
+        if not server_data.get("host") or server_data.get("host") in ("127.0.0.1", "localhost"):
+            server_data["host"] = "0.0.0.0"
+
     return SBOMConfig(
         server=ServerConfig(**server_data),
         agent=AgentConfig(**agent_data)

@@ -25,7 +25,7 @@ logging.basicConfig(
 logger = logging.getLogger("sbom-server")
 
 from sbom_server.database import get_db, init_database, dict_from_row
-from sbom_core.config import settings
+from sbom_core.config import settings, is_docker
 
 # ─── Paths ──────────────────────────────────────────────────────────────
 WEB_DIR = Path(__file__).resolve().parent.parent.parent / "web"
@@ -863,12 +863,17 @@ async def sse_endpoint():
 
 # ─── Entry Point ────────────────────────────────────────────────────────
 def start():
-    # Detect if we are in Docker or have an explicit config path
     # Usually we don't want reload in production or Docker to avoid strange reset issues
-    is_docker = Path("/.dockerenv").exists()
-    do_reload = not is_docker and settings.server.host in ("127.0.0.1", "localhost")
+    in_docker = is_docker()
+    do_reload = not in_docker and settings.server.host in ("127.0.0.1", "localhost")
 
-    logger.info(f"Starting uvicorn (reload={do_reload})")
+    logger.info("──────────────────────────────────────────────────")
+    logger.info(f"Starting SBOM Server")
+    logger.info(f"  Bind Host : {settings.server.host}")
+    logger.info(f"  Bind Port : {settings.server.port}")
+    logger.info(f"  In Docker : {in_docker}")
+    logger.info(f"  Reload    : {do_reload}")
+    logger.info("──────────────────────────────────────────────────")
 
     uvicorn.run(
         "sbom_server.main:app",

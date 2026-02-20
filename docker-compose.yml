@@ -20,6 +20,7 @@ services:
       - ./output:/app/output
     environment:
       - SBOM_SERVER_CONFIG=/app/config/server.conf
+      - IS_DOCKER=true
     networks:
       - sbom-net
     restart: always
@@ -37,6 +38,7 @@ services:
       - /:/mnt/host:ro
     environment:
       - SBOM_AGENT_CONFIG=/app/config/agent.conf
+      - IS_DOCKER=true
     networks:
       - sbom-net
     restart: always
