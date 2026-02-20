@@ -13,6 +13,12 @@ class TestHealthCheck:
         assert data["status"] == "healthy"
         assert "version" in data
 
+    def test_root_route(self, client):
+        resp = client.get("/")
+        assert resp.status_code == 200
+        assert "text/html" in resp.headers["content-type"]
+        assert "<title>SBOM Scanner" in resp.text
+
 
 class TestAgentEndpoints:
     def test_register_agent(self, client):

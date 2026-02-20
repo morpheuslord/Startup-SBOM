@@ -3,7 +3,8 @@ SBOM Scanner — FastAPI Server
 All endpoints in a single file for simplicity.
 """
 from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.responses import HTMLResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, StreamingResponse, Response, FileResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
@@ -62,42 +63,20 @@ app.add_middleware(
 )
 
 
-# ─── Static File Serving (explicit routes) ──────────────────────────────
-@app.get("/static/{filename:path}")
-async def serve_static(filename: str):
-    """Serve static files from web/ directory with proper Content-Type"""
-    file_path = WEB_DIR / filename
+# ─── Static Files & UI ──────────────────────────────────────────────────
+# Mount static files (style.css, app.js)
+app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
-    # Security: prevent path traversal
-    try:
-        file_path = file_path.resolve()
-        if not str(file_path).startswith(str(WEB_DIR.resolve())):
-            raise HTTPException(status_code=403, detail="Forbidden")
-    except Exception:
-        raise HTTPException(status_code=403, detail="Forbidden")
+@app.get("/", response_class=FileResponse)
+async def serve_index():
+    """Serve the main dashboard UI"""
+    index_path = WEB_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=404, detail="index.html not found")
+    return FileResponse(index_path)
 
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail=f"File not found: {filename}")
 
-    # Determine content type
-    content_type, _ = mimetypes.guess_type(str(file_path))
-    if content_type is None:
-        content_type = "application/octet-stream"
-
-    # Read file
-    if content_type.startswith("text/") or content_type in (
-        "application/javascript",
-        "application/json",
-    ):
-        content = file_path.read_text(encoding="utf-8")
-    else:
-        content = file_path.read_bytes()
-
-    return Response(
-        content=content,
-        media_type=content_type,
-        headers={"Cache-Control": "no-cache"},
-    )
+# ─── API Endpoints ──────────────────────────────────────────────────────
 
 
 # ─── Root & Health ──────────────────────────────────────────────────────
