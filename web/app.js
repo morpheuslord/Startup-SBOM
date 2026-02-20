@@ -306,11 +306,13 @@ function fetchMisconfigurations() {
             + '</div>';
 
         tbody.innerHTML = mcs.map(function (m, idx) {
+            var sev = (m.severity != null ? String(m.severity) : '').toLowerCase();
+            var st = (m.status != null ? String(m.status) : '').toLowerCase();
             return '<tr class="mc-row" onclick="showMcDetail(' + idx + ')" data-mc-idx="' + idx + '">'
                 + '<td class="mono">' + escHtml(m.check_id || '–') + '</td>'
                 + '<td>' + escHtml(m.check_title || '–') + '</td>'
-                + '<td><span class="status status-sev-' + (m.severity || '').toLowerCase() + '">' + escHtml(m.severity || '–') + '</span></td>'
-                + '<td><span class="mc-status mc-status-' + (m.status || '').toLowerCase() + '">' + escHtml(m.status || '–') + '</span></td>'
+                + '<td><span class="status status-sev-' + sev + '">' + escHtml(m.severity || '–') + '</span></td>'
+                + '<td><span class="mc-status mc-status-' + st + '">' + escHtml(m.status || '–') + '</span></td>'
                 + '<td class="mono">' + escHtml((m.resource || '–').substring(0, 50)) + '</td>'
                 + '<td>' + scanTypeBadge(m.source) + '</td>'
                 + '</tr>';
@@ -338,17 +340,25 @@ function showMcDetail(idx) {
     var body = document.getElementById('mc-modal-body');
     modal.hidden = false;
 
-    body.innerHTML = '<div class="detail-grid">'
-        + '<div class="detail-item"><span>Check ID</span><strong class="mono">' + escHtml(m.check_id) + '</strong></div>'
-        + '<div class="detail-item"><span>Title</span><strong>' + escHtml(m.check_title) + '</strong></div>'
-        + '<div class="detail-item"><span>Severity</span><strong><span class="status status-sev-' + (m.severity || '').toLowerCase() + '">' + escHtml(m.severity) + '</span></strong></div>'
-        + '<div class="detail-item"><span>Status</span><strong><span class="mc-status mc-status-' + (m.status || '').toLowerCase() + '">' + escHtml(m.status) + '</span></strong></div>'
-        + '<div class="detail-item"><span>Resource</span><strong class="mono">' + escHtml(m.resource) + '</strong></div>'
-        + '<div class="detail-item"><span>Source</span><strong>' + escHtml(m.source) + '</strong></div>'
-        + '</div>'
-        + (m.description ? '<div class="detail-block"><h4>Description</h4><p>' + escHtml(m.description) + '</p></div>' : '')
-        + (m.remediation ? '<div class="detail-block"><h4>Remediation</h4><p>' + escHtml(m.remediation) + '</p></div>' : '');
-    refreshIcons();
+    try {
+        var sev = (m.severity != null ? String(m.severity) : '').toLowerCase();
+        var st = (m.status != null ? String(m.status) : '').toLowerCase();
+        body.innerHTML = '<div class="detail-grid">'
+            + '<div class="detail-item"><span>Check ID</span><strong class="mono">' + escHtml(m.check_id) + '</strong></div>'
+            + '<div class="detail-item"><span>Title</span><strong>' + escHtml(m.check_title) + '</strong></div>'
+            + '<div class="detail-item"><span>Severity</span><strong><span class="status status-sev-' + sev + '">' + escHtml(m.severity) + '</span></strong></div>'
+            + '<div class="detail-item"><span>Status</span><strong><span class="mc-status mc-status-' + st + '">' + escHtml(m.status) + '</span></strong></div>'
+            + '<div class="detail-item"><span>Resource</span><strong class="mono">' + escHtml(m.resource) + '</strong></div>'
+            + '<div class="detail-item"><span>Source</span><strong>' + escHtml(m.source) + '</strong></div>'
+            + '</div>'
+            + (m.description ? '<div class="detail-block"><h4>Description</h4><p>' + escHtml(m.description) + '</p></div>' : '')
+            + (m.remediation ? '<div class="detail-block"><h4>Remediation</h4><p>' + escHtml(m.remediation) + '</p></div>' : '');
+        refreshIcons();
+    } catch (e) {
+        console.error('[SBOM] showMcDetail error', e);
+        body.innerHTML = '<p class="state-msg state-error">Could not load finding detail.</p>';
+        refreshIcons();
+    }
 }
 
 function closeMcModal() {
@@ -528,11 +538,13 @@ function showScanDetail(scanId) {
         var mcHtml = '';
         if (s.misconfigurations && s.misconfigurations.length > 0) {
             var mcRows = s.misconfigurations.slice(0, 50).map(function (m) {
+                var sev = (m.severity != null ? String(m.severity) : '').toLowerCase();
+                var st = (m.status != null ? String(m.status) : '').toLowerCase();
                 return '<tr>'
                     + '<td class="mono">' + escHtml(m.check_id || '–') + '</td>'
                     + '<td>' + escHtml((m.check_title || '–').substring(0, 60)) + '</td>'
-                    + '<td><span class="status status-sev-' + (m.severity || '').toLowerCase() + '">' + escHtml(m.severity || '–') + '</span></td>'
-                    + '<td><span class="mc-status mc-status-' + (m.status || '').toLowerCase() + '">' + escHtml(m.status || '–') + '</span></td>'
+                    + '<td><span class="status status-sev-' + sev + '">' + escHtml(m.severity || '–') + '</span></td>'
+                    + '<td><span class="mc-status mc-status-' + st + '">' + escHtml(m.status || '–') + '</span></td>'
                     + '</tr>';
             }).join('');
             mcHtml = '<h3><i data-lucide="alert-octagon" style="width:16px;height:16px"></i> Misconfigurations (' + s.misconfigurations.length + ')</h3>'
