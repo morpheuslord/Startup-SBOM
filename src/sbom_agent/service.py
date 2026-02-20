@@ -7,12 +7,21 @@ import time
 import requests
 import socket
 import platform
+import logging
 import json
 import subprocess
 import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
+
+# ─── Logging ────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("sbom-agent")
 
 from sbom_core.config import settings
 
@@ -29,11 +38,11 @@ class SBOMAgent:
         # Auto-detect scanners
         self.enabled_scanners = self._detect_scanners()
 
-        print(f"[{self._ts()}] SBOM Agent initialized")
-        print(f"  Agent ID : {self.agent_id}")
-        print(f"  Server   : {self.server_url}")
-        print(f"  Output   : {self.output_dir}")
-        print(f"  Scanners : {', '.join(self.enabled_scanners)}")
+        logger.info("SBOM Agent initialized")
+        logger.info(f"  Agent ID : {self.agent_id}")
+        logger.info(f"  Server   : {self.server_url}")
+        logger.info(f"  Output   : {self.output_dir}")
+        logger.info(f"  Scanners : {', '.join(self.enabled_scanners)}")
 
     def _detect_scanners(self) -> List[str]:
         scanners = []
@@ -54,7 +63,7 @@ class SBOMAgent:
             scanners.append("prowler")
 
         if not scanners:
-            print(f"[{self._ts()}] WARNING: No supported package managers or tools found!")
+            logger.warning("No supported package managers or tools found!")
 
         return scanners
 
@@ -72,8 +81,6 @@ class SBOMAgent:
                 return False
 
     # ── helpers ──────────────────────────────────────────────────────
-    def _ts(self) -> str:
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     def _request(self, method: str, endpoint: str, **kwargs) -> Optional[Dict]:
         url = f"{self.server_url}{endpoint}"
@@ -82,7 +89,7 @@ class SBOMAgent:
             r.raise_for_status()
             return r.json()
         except requests.exceptions.RequestException as e:
-            print(f"[{self._ts()}] Request failed: {e}")
+            logger.error(f"Request failed: {e}")
             return None
 
     def _save_output(self, scan_type: str, data: Dict):
@@ -92,9 +99,9 @@ class SBOMAgent:
             filename = f"{scan_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             filepath = self.output_dir / filename
             filepath.write_text(json.dumps(data, indent=2))
-            print(f"[{self._ts()}] Output saved to {filepath}")
+            logger.info(f"Output saved to {filepath}")
         except Exception as e:
-            print(f"[{self._ts()}] Failed to save output: {e}")
+            logger.error(f"Failed to save output: {e}")
 
     # ── lifecycle ────────────────────────────────────────────────────
     def get_system_info(self) -> Dict:
@@ -109,9 +116,9 @@ class SBOMAgent:
     def register(self) -> bool:
         result = self._request("POST", "/api/agents/register", json=self.get_system_info())
         if result:
-            print(f"[{self._ts()}] Registered with server")
+            logger.info("Registered with server")
             return True
-        print(f"[{self._ts()}] Failed to register")
+        logger.error("Failed to register")
         return False
 
     def send_heartbeat(self):
@@ -128,14 +135,14 @@ class SBOMAgent:
             json={"status": status, "data": data},
         )
         if result:
-            print(f"[{self._ts()}] Results uploaded for {scan_id}")
+            logger.info(f"Results uploaded for {scan_id}")
         else:
-            print(f"[{self._ts()}] Failed to upload results")
+            logger.error(f"Failed to upload results for {scan_id}")
 
     # ── scanners ─────────────────────────────────────────────────────
     def scan_apt_packages(self) -> Dict:
         """Scan APT packages (Debian/Ubuntu)"""
-        print(f"[{self._ts()}] Scanning APT packages...")
+        logger.info("Scanning APT packages...")
         packages: List[Dict] = []
 
         try:
@@ -164,7 +171,7 @@ class SBOMAgent:
                         }
                     )
 
-            print(f"[{self._ts()}] Found {len(packages)} APT packages")
+            logger.info(f"Found {len(packages)} APT packages")
 
         except subprocess.CalledProcessError as e:
             return {"error": f"dpkg-query failed: {e}", "packages": []}
@@ -175,7 +182,7 @@ class SBOMAgent:
 
     def scan_rpm_packages(self) -> Dict:
         """Scan RPM packages (RHEL/CentOS/Fedora)"""
-        print(f"[{self._ts()}] Scanning RPM packages...")
+        logger.info("Scanning RPM packages...")
         packages: List[Dict] = []
 
         try:
@@ -204,7 +211,7 @@ class SBOMAgent:
                         }
                     )
 
-            print(f"[{self._ts()}] Found {len(packages)} RPM packages")
+            logger.info(f"Found {len(packages)} RPM packages")
 
         except subprocess.CalledProcessError as e:
             return {"error": f"rpm failed: {e}", "packages": []}
@@ -215,7 +222,7 @@ class SBOMAgent:
 
     def scan_docker_images(self) -> Dict:
         """Scan Docker images with Trivy for vulnerabilities"""
-        print(f"[{self._ts()}] Scanning Docker images...")
+        logger.info("Scanning Docker images...")
         images: List[Dict] = []
         vulnerabilities: List[Dict] = []
 
@@ -246,7 +253,7 @@ class SBOMAgent:
             ]
 
             for image_name in image_names:
-                print(f"[{self._ts()}] Scanning {image_name}...")
+                logger.info(f"Scanning {image_name}...")
 
                 try:
                     trivy_result = subprocess.run(
@@ -314,17 +321,17 @@ class SBOMAgent:
                             }
                         )
                         vulnerabilities.extend(image_vulns)
-                        print(
-                            f"[{self._ts()}] Found {len(image_vulns)} vulns, "
+                        logger.info(
+                            f"Found {len(image_vulns)} vulns, "
                             f"{len(image_misconfigs)} misconfigs in {image_name}"
                         )
 
                 except subprocess.TimeoutExpired:
-                    print(f"[{self._ts()}] Timeout scanning {image_name}")
+                    logger.warning(f"Timeout scanning {image_name}")
                 except json.JSONDecodeError as e:
-                    print(f"[{self._ts()}] JSON parse error for {image_name}: {e}")
+                    logger.error(f"JSON parse error for {image_name}: {e}")
                 except Exception as e:
-                    print(f"[{self._ts()}] Error scanning {image_name}: {e}")
+                    logger.error(f"Error scanning {image_name}: {e}")
 
         except subprocess.CalledProcessError as e:
             return {"error": f"Docker failed: {e}", "images": [], "vulnerabilities": []}
@@ -340,7 +347,7 @@ class SBOMAgent:
 
     def scan_filesystem(self) -> Dict:
         """Scan mounted host filesystem with Trivy for vulnerabilities and misconfigs"""
-        print(f"[{self._ts()}] Scanning host filesystem via Trivy...")
+        logger.info("Scanning host filesystem via Trivy...")
         vulnerabilities: List[Dict] = []
         misconfigurations: List[Dict] = []
 
@@ -423,8 +430,8 @@ class SBOMAgent:
                             }
                         )
 
-            print(
-                f"[{self._ts()}] Filesystem scan: {len(vulnerabilities)} vulns, "
+            logger.info(
+                f"Filesystem scan: {len(vulnerabilities)} vulns, "
                 f"{len(misconfigurations)} misconfigs"
             )
 
@@ -452,7 +459,7 @@ class SBOMAgent:
 
     def scan_prowler(self) -> Dict:
         """Run Prowler for comprehensive security checks"""
-        print(f"[{self._ts()}] Running Prowler security checks...")
+        logger.info("Running Prowler security checks...")
         findings: List[Dict] = []
 
         try:
@@ -509,9 +516,9 @@ class SBOMAgent:
                         except json.JSONDecodeError:
                             continue
                 except Exception as e:
-                    print(f"[{self._ts()}] Error reading Prowler output {json_file}: {e}")
+                    logger.error(f"Error reading Prowler output {json_file}: {e}")
 
-            print(f"[{self._ts()}] Prowler found {len(findings)} findings")
+            logger.info(f"Prowler found {len(findings)} findings")
 
         except subprocess.TimeoutExpired:
             return {"error": "Prowler scan timed out", "misconfigurations": []}
@@ -549,10 +556,10 @@ class SBOMAgent:
 
     # ── main loop ────────────────────────────────────────────────────
     def run(self):
-        print(f"[{self._ts()}] Starting SBOM Agent...")
+        logger.info("Starting SBOM Agent...")
 
         if not self.register():
-            print(f"[{self._ts()}] Failed to register. Exiting.")
+            logger.error("Failed to register. Exiting.")
             return
 
         heartbeat_counter = 0
@@ -568,8 +575,8 @@ class SBOMAgent:
                 for scan in pending_scans:
                     scan_id = scan["scan_id"]
                     scan_type = scan["scan_type"]
-                    print(
-                        f"[{self._ts()}] Processing scan: {scan_id} (type: {scan_type})"
+                    logger.info(
+                        f"Processing scan: {scan_id} (type: {scan_type})"
                     )
 
                     self.report_results(scan_id, "running", {})
@@ -585,15 +592,15 @@ class SBOMAgent:
                         else:
                             self.report_results(scan_id, "completed", results)
                     except Exception as e:
-                        print(f"[{self._ts()}] Scan failed: {e}")
+                        logger.error(f"Scan failed: {e}")
                         self.report_results(scan_id, "failed", {"error": str(e)})
 
                 time.sleep(self.poll_interval)
 
         except KeyboardInterrupt:
-            print(f"\n[{self._ts()}] Shutting down...")
+            logger.info("Shutting down...")
         except Exception as e:
-            print(f"[{self._ts()}] Fatal error: {e}")
+            logger.fatal(f"Fatal error: {e}")
             raise
 
 
@@ -602,7 +609,7 @@ def start():
         agent = SBOMAgent()
         agent.run()
     except Exception as e:
-        print(f"Fatal error: {e}")
+        logger.fatal(f"Fatal error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":

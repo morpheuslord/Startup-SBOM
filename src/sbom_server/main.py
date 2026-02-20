@@ -8,12 +8,21 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import asyncio
+import logging
 import json
 import mimetypes
 import uvicorn
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+
+# ─── Logging ────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+logger = logging.getLogger("sbom-server")
 
 from sbom_server.database import get_db, init_database, dict_from_row
 from sbom_core.config import settings
@@ -34,16 +43,16 @@ async def lifespan(app):
         # Ensure directory exists
         db_path.parent.mkdir(parents=True, exist_ok=True)
         init_database()
-        print(f"Database initialized at {db_path}")
+        logger.info(f"Database initialized at {db_path}")
     else:
         # Re-init to add any new tables (CREATE TABLE IF NOT EXISTS is safe)
         init_database()
-        print(f"Database updated at {db_path}")
+        logger.info(f"Database updated at {db_path}")
 
-    print(f"Server starting on http://{settings.server.host}:{settings.server.port}")
+    logger.info(f"Server starting on http://{settings.server.host}:{settings.server.port}")
     yield
     # Shutdown
-    print("Server shutting down...")
+    logger.info("Server shutting down...")
 
 
 # ─── App ────────────────────────────────────────────────────────────────
@@ -854,11 +863,18 @@ async def sse_endpoint():
 
 # ─── Entry Point ────────────────────────────────────────────────────────
 def start():
+    # Detect if we are in Docker or have an explicit config path
+    # Usually we don't want reload in production or Docker to avoid strange reset issues
+    is_docker = Path("/.dockerenv").exists()
+    do_reload = not is_docker and settings.server.host in ("127.0.0.1", "localhost")
+
+    logger.info(f"Starting uvicorn (reload={do_reload})")
+
     uvicorn.run(
         "sbom_server.main:app",
         host=settings.server.host,
         port=settings.server.port,
-        reload=True,
+        reload=do_reload,
         log_level="info",
     )
 
