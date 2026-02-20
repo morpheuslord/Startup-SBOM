@@ -22,6 +22,9 @@ services:
     networks:
       - sbom-net
     restart: always
+    # asyncio event loop needs socketpair(); some seccomp profiles block it
+    security_opt:
+      - seccomp:unconfined
 
   sbom-agent:
     build:
