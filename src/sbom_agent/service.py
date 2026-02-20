@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SBOM Scanner Agent
-Polls server for work and executes scans
+Polls server for work and executes scans using Trivy, Prowler, and native package managers.
 """
 import time
 import requests
@@ -23,13 +23,16 @@ class SBOMAgent:
         self.agent_id = self.config.id
         self.server_url = self.config.server_url.rstrip("/")
         self.poll_interval = self.config.poll_interval
-        
+        self.output_dir = Path(self.config.output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
         # Auto-detect scanners
         self.enabled_scanners = self._detect_scanners()
 
         print(f"[{self._ts()}] SBOM Agent initialized")
         print(f"  Agent ID : {self.agent_id}")
         print(f"  Server   : {self.server_url}")
+        print(f"  Output   : {self.output_dir}")
         print(f"  Scanners : {', '.join(self.enabled_scanners)}")
 
     def _detect_scanners(self) -> List[str]:
@@ -43,10 +46,16 @@ class SBOMAgent:
         # Check for Docker
         if self._command_exists("docker"):
             scanners.append("docker")
-        
+        # Check for Trivy (filesystem scanning)
+        if self._command_exists("trivy"):
+            scanners.append("trivy-fs")
+        # Check for Prowler
+        if self._command_exists("prowler"):
+            scanners.append("prowler")
+
         if not scanners:
             print(f"[{self._ts()}] WARNING: No supported package managers or tools found!")
-            
+
         return scanners
 
     def _command_exists(self, cmd: str) -> bool:
@@ -56,10 +65,6 @@ class SBOMAgent:
         except subprocess.CalledProcessError:
             return False
         except FileNotFoundError:
-            # 'which' command might not exist on some minimal containers, 
-            # try running the command itself with --version or similar if applicable
-            # But standard linux usually has 'which' or 'command -v'.
-            # Fallback: try calling the command directly
             try:
                 subprocess.run([cmd, "--version"], capture_output=True, check=True)
                 return True
@@ -73,12 +78,23 @@ class SBOMAgent:
     def _request(self, method: str, endpoint: str, **kwargs) -> Optional[Dict]:
         url = f"{self.server_url}{endpoint}"
         try:
-            r = requests.request(method, url, timeout=10, **kwargs)
+            r = requests.request(method, url, timeout=30, **kwargs)
             r.raise_for_status()
             return r.json()
         except requests.exceptions.RequestException as e:
             print(f"[{self._ts()}] Request failed: {e}")
             return None
+
+    def _save_output(self, scan_type: str, data: Dict):
+        """Save scan output to the shared output directory as JSON."""
+        try:
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            filename = f"{scan_type}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            filepath = self.output_dir / filename
+            filepath.write_text(json.dumps(data, indent=2))
+            print(f"[{self._ts()}] Output saved to {filepath}")
+        except Exception as e:
+            print(f"[{self._ts()}] Failed to save output: {e}")
 
     # ── lifecycle ────────────────────────────────────────────────────
     def get_system_info(self) -> Dict:
@@ -87,6 +103,7 @@ class SBOMAgent:
             "hostname": self.config.hostname or socket.gethostname(),
             "ip_address": socket.gethostbyname(socket.gethostname()),
             "os_info": platform.platform(),
+            "scanners": self.enabled_scanners,
         }
 
     def register(self) -> bool:
@@ -173,7 +190,7 @@ class SBOMAgent:
                 check=True,
             )
 
-            for line in result.stdout.strip().split("\\n"):
+            for line in result.stdout.strip().split("\n"):
                 if not line:
                     continue
                 parts = line.split("|")
@@ -197,7 +214,7 @@ class SBOMAgent:
         return {"packages": packages, "total_count": len(packages)}
 
     def scan_docker_images(self) -> Dict:
-        """Scan Docker images with Trivy"""
+        """Scan Docker images with Trivy for vulnerabilities"""
         print(f"[{self._ts()}] Scanning Docker images...")
         images: List[Dict] = []
         vulnerabilities: List[Dict] = []
@@ -210,7 +227,7 @@ class SBOMAgent:
             trivy_check = subprocess.run(["which", "trivy"], capture_output=True, text=True)
             if trivy_check.returncode != 0:
                 return {
-                    "error": "Trivy not found. Install from https://aquasecurity.github.io/trivy/",
+                    "error": "Trivy not found. Install via: apt-get install trivy",
                     "images": [],
                     "vulnerabilities": [],
                 }
@@ -224,8 +241,8 @@ class SBOMAgent:
 
             image_names = [
                 line.strip()
-                for line in result.stdout.strip().split("\\n")
-                if line and "<none>" not in line
+                for line in result.stdout.strip().split("\n")
+                if line.strip() and "<none>" not in line
             ]
 
             for image_name in image_names:
@@ -239,16 +256,22 @@ class SBOMAgent:
                         timeout=300,
                     )
 
-                    if trivy_result.returncode == 0:
+                    if trivy_result.returncode == 0 and trivy_result.stdout.strip():
                         trivy_data = json.loads(trivy_result.stdout)
                         image_vulns: List[Dict] = []
+                        image_misconfigs: List[Dict] = []
+                        sev_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0}
 
                         for result_item in trivy_data.get("Results", []):
+                            # Vulnerabilities
                             for vuln in result_item.get("Vulnerabilities", []):
+                                sev = vuln.get("Severity", "UNKNOWN")
+                                if sev in sev_counts:
+                                    sev_counts[sev] += 1
                                 image_vulns.append(
                                     {
                                         "cve_id": vuln.get("VulnerabilityID"),
-                                        "severity": vuln.get("Severity"),
+                                        "severity": sev,
                                         "package_name": vuln.get("PkgName"),
                                         "package_version": vuln.get("InstalledVersion"),
                                         "description": (
@@ -259,16 +282,47 @@ class SBOMAgent:
                                     }
                                 )
 
+                            # Misconfigurations from Trivy
+                            for mc in result_item.get("Misconfigurations", []):
+                                image_misconfigs.append(
+                                    {
+                                        "check_id": mc.get("ID", ""),
+                                        "check_title": mc.get("Title", ""),
+                                        "severity": mc.get("Severity", "UNKNOWN"),
+                                        "status": mc.get("Status", "FAIL"),
+                                        "resource": image_name,
+                                        "description": (mc.get("Description", "") or "")[:500],
+                                        "remediation": (mc.get("Resolution", "") or "")[:500],
+                                        "source": "trivy",
+                                    }
+                                )
+
+                        # Parse image name and tag
+                        parts = image_name.rsplit(":", 1)
+                        img_repo = parts[0]
+                        img_tag = parts[1] if len(parts) > 1 else "latest"
+
                         images.append(
-                            {"image": image_name, "vulnerability_count": len(image_vulns)}
+                            {
+                                "image_name": img_repo,
+                                "tag": img_tag,
+                                "vulnerability_count": len(image_vulns),
+                                "critical_count": sev_counts["CRITICAL"],
+                                "high_count": sev_counts["HIGH"],
+                                "medium_count": sev_counts["MEDIUM"],
+                                "low_count": sev_counts["LOW"],
+                            }
                         )
                         vulnerabilities.extend(image_vulns)
                         print(
-                            f"[{self._ts()}] Found {len(image_vulns)} vulns in {image_name}"
+                            f"[{self._ts()}] Found {len(image_vulns)} vulns, "
+                            f"{len(image_misconfigs)} misconfigs in {image_name}"
                         )
 
                 except subprocess.TimeoutExpired:
                     print(f"[{self._ts()}] Timeout scanning {image_name}")
+                except json.JSONDecodeError as e:
+                    print(f"[{self._ts()}] JSON parse error for {image_name}: {e}")
                 except Exception as e:
                     print(f"[{self._ts()}] Error scanning {image_name}: {e}")
 
@@ -282,6 +336,191 @@ class SBOMAgent:
             "vulnerabilities": vulnerabilities,
             "total_images": len(images),
             "total_vulnerabilities": len(vulnerabilities),
+        }
+
+    def scan_filesystem(self) -> Dict:
+        """Scan mounted host filesystem with Trivy for vulnerabilities and misconfigs"""
+        print(f"[{self._ts()}] Scanning host filesystem via Trivy...")
+        vulnerabilities: List[Dict] = []
+        misconfigurations: List[Dict] = []
+
+        try:
+            trivy_check = subprocess.run(["which", "trivy"], capture_output=True, text=True)
+            if trivy_check.returncode != 0:
+                return {"error": "Trivy not found", "vulnerabilities": [], "misconfigurations": []}
+
+            # Scan /mnt/host which is the host root filesystem mounted read-only
+            scan_path = "/mnt/host"
+            if not Path(scan_path).exists():
+                return {
+                    "error": f"Host filesystem not mounted at {scan_path}",
+                    "vulnerabilities": [],
+                    "misconfigurations": [],
+                }
+
+            result = subprocess.run(
+                [
+                    "trivy", "fs", scan_path,
+                    "--format", "json",
+                    "--quiet",
+                    "--scanners", "vuln,misconfig,secret",
+                    "--severity", "CRITICAL,HIGH,MEDIUM,LOW",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+
+            if result.returncode == 0 and result.stdout.strip():
+                trivy_data = json.loads(result.stdout)
+
+                for result_item in trivy_data.get("Results", []):
+                    target = result_item.get("Target", "")
+
+                    # Vulnerabilities
+                    for vuln in result_item.get("Vulnerabilities", []):
+                        vulnerabilities.append(
+                            {
+                                "cve_id": vuln.get("VulnerabilityID"),
+                                "severity": vuln.get("Severity", "UNKNOWN"),
+                                "package_name": vuln.get("PkgName"),
+                                "package_version": vuln.get("InstalledVersion"),
+                                "description": (
+                                    vuln.get("Description", "") or vuln.get("Title", "")
+                                )[:200],
+                                "fixed_version": vuln.get("FixedVersion"),
+                                "cvss_score": self._extract_cvss(vuln),
+                            }
+                        )
+
+                    # Misconfigurations
+                    for mc in result_item.get("Misconfigurations", []):
+                        misconfigurations.append(
+                            {
+                                "check_id": mc.get("ID", ""),
+                                "check_title": mc.get("Title", ""),
+                                "severity": mc.get("Severity", "UNKNOWN"),
+                                "status": mc.get("Status", "FAIL"),
+                                "resource": target,
+                                "description": (mc.get("Description", "") or "")[:500],
+                                "remediation": (mc.get("Resolution", "") or "")[:500],
+                                "source": "trivy",
+                            }
+                        )
+
+                    # Secrets (treat as critical misconfigurations)
+                    for secret in result_item.get("Secrets", []):
+                        misconfigurations.append(
+                            {
+                                "check_id": secret.get("RuleID", "SECRET"),
+                                "check_title": secret.get("Title", "Secret Detected"),
+                                "severity": "CRITICAL",
+                                "status": "FAIL",
+                                "resource": target,
+                                "description": (secret.get("Match", "") or "")[:500],
+                                "remediation": "Remove or rotate the exposed secret",
+                                "source": "trivy-secret",
+                            }
+                        )
+
+            print(
+                f"[{self._ts()}] Filesystem scan: {len(vulnerabilities)} vulns, "
+                f"{len(misconfigurations)} misconfigs"
+            )
+
+        except subprocess.TimeoutExpired:
+            return {
+                "error": "Filesystem scan timed out",
+                "vulnerabilities": [],
+                "misconfigurations": [],
+            }
+        except json.JSONDecodeError as e:
+            return {
+                "error": f"Failed to parse Trivy output: {e}",
+                "vulnerabilities": [],
+                "misconfigurations": [],
+            }
+        except Exception as e:
+            return {"error": str(e), "vulnerabilities": [], "misconfigurations": []}
+
+        return {
+            "vulnerabilities": vulnerabilities,
+            "misconfigurations": misconfigurations,
+            "total_vulnerabilities": len(vulnerabilities),
+            "total_misconfigurations": len(misconfigurations),
+        }
+
+    def scan_prowler(self) -> Dict:
+        """Run Prowler for comprehensive security checks"""
+        print(f"[{self._ts()}] Running Prowler security checks...")
+        findings: List[Dict] = []
+
+        try:
+            prowler_check = subprocess.run(
+                ["which", "prowler"], capture_output=True, text=True
+            )
+            if prowler_check.returncode != 0:
+                return {"error": "Prowler not found", "misconfigurations": []}
+
+            # Run prowler with JSON output to a temp dir
+            prowler_out = self.output_dir / "prowler_tmp"
+            prowler_out.mkdir(parents=True, exist_ok=True)
+
+            result = subprocess.run(
+                [
+                    "prowler",
+                    "docker",
+                    "--output-directory", str(prowler_out),
+                    "--output-formats", "json",
+                    "--no-banner",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=900,
+            )
+
+            # Parse output JSON files
+            for json_file in prowler_out.glob("*.json"):
+                try:
+                    content = json_file.read_text()
+                    # Prowler outputs JSONL (one JSON object per line)
+                    for line in content.strip().split("\n"):
+                        if not line.strip():
+                            continue
+                        try:
+                            finding = json.loads(line)
+                            findings.append(
+                                {
+                                    "check_id": finding.get("CheckID", ""),
+                                    "check_title": finding.get("CheckTitle", ""),
+                                    "severity": finding.get("Severity", "UNKNOWN").upper(),
+                                    "status": finding.get("Status", "FAIL").upper(),
+                                    "resource": finding.get("ResourceId", finding.get("ResourceArn", "")),
+                                    "description": (
+                                        finding.get("StatusExtended", "") or ""
+                                    )[:500],
+                                    "remediation": (
+                                        finding.get("Remediation", {}).get("Recommendation", {}).get("Text", "")
+                                        if isinstance(finding.get("Remediation"), dict) else ""
+                                    )[:500],
+                                    "source": "prowler",
+                                }
+                            )
+                        except json.JSONDecodeError:
+                            continue
+                except Exception as e:
+                    print(f"[{self._ts()}] Error reading Prowler output {json_file}: {e}")
+
+            print(f"[{self._ts()}] Prowler found {len(findings)} findings")
+
+        except subprocess.TimeoutExpired:
+            return {"error": "Prowler scan timed out", "misconfigurations": []}
+        except Exception as e:
+            return {"error": str(e), "misconfigurations": []}
+
+        return {
+            "misconfigurations": findings,
+            "total_misconfigurations": len(findings),
         }
 
     def _extract_cvss(self, vuln: Dict) -> str:
@@ -301,6 +540,10 @@ class SBOMAgent:
             return self.scan_rpm_packages()
         elif scan_type == "docker":
             return self.scan_docker_images()
+        elif scan_type == "trivy-fs":
+            return self.scan_filesystem()
+        elif scan_type == "prowler":
+            return self.scan_prowler()
         else:
             return {"error": f"Unknown scan type: {scan_type}"}
 
@@ -333,6 +576,10 @@ class SBOMAgent:
 
                     try:
                         results = self.perform_scan(scan_type)
+
+                        # Save output locally to shared volume
+                        self._save_output(scan_type, results)
+
                         if "error" in results:
                             self.report_results(scan_id, "failed", results)
                         else:
@@ -344,7 +591,7 @@ class SBOMAgent:
                 time.sleep(self.poll_interval)
 
         except KeyboardInterrupt:
-            print(f"\\n[{self._ts()}] Shutting down...")
+            print(f"\n[{self._ts()}] Shutting down...")
         except Exception as e:
             print(f"[{self._ts()}] Fatal error: {e}")
             raise

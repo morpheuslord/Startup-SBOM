@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SBOM Scanner — Dashboard</title>
+    <title>SBOM Scanner — Security Dashboard</title>
     <meta name="description" content="Distributed SBOM scanning dashboard with real-time vulnerability monitoring">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,7 +12,6 @@
     <link
         href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet">
-    <!-- Lucide Icons (lightweight SVG icon library) -->
     <script src="https://unpkg.com/lucide@0.344.0/dist/umd/lucide.min.js"></script>
 </head>
 
@@ -29,15 +28,27 @@
             </div>
         </div>
         <div class="nav-links">
-            <a href="/" class="active" id="nav-dashboard">
+            <a href="#" class="active" data-tab="overview" id="nav-overview">
                 <i data-lucide="layout-dashboard" class="nav-link-icon"></i>
-                Dashboard
+                Overview
             </a>
-            <a href="#agents" id="nav-agents">
+            <a href="#" data-tab="vulnerabilities" id="nav-vulns">
+                <i data-lucide="shield-alert" class="nav-link-icon"></i>
+                Vulnerabilities
+            </a>
+            <a href="#" data-tab="docker" id="nav-docker">
+                <i data-lucide="container" class="nav-link-icon"></i>
+                Docker
+            </a>
+            <a href="#" data-tab="misconfigs" id="nav-misconfigs">
+                <i data-lucide="alert-octagon" class="nav-link-icon"></i>
+                Misconfigs
+            </a>
+            <a href="#" data-tab="agents" id="nav-agents">
                 <i data-lucide="server" class="nav-link-icon"></i>
                 Agents
             </a>
-            <a href="#scans" id="nav-scans">
+            <a href="#" data-tab="scans" id="nav-scans">
                 <i data-lucide="scan-search" class="nav-link-icon"></i>
                 Scans
             </a>
@@ -49,126 +60,381 @@
     </nav>
 
     <main>
-        <!-- ─── Stats Cards ────────────────────────────────── -->
-        <section class="stats-grid" id="stats-section">
-            <div class="stat-card card-agents">
-                <div class="stat-icon-wrap">
-                    <i data-lucide="cpu" class="stat-icon"></i>
+        <!-- ════════════════════════════════════════════════════════════
+             TAB: Overview
+             ════════════════════════════════════════════════════════════ -->
+        <div class="tab-content active" id="tab-overview">
+            <!-- Stats Cards -->
+            <section class="stats-grid" id="stats-section">
+                <div class="stat-card card-agents">
+                    <div class="stat-icon-wrap"><i data-lucide="cpu" class="stat-icon"></i></div>
+                    <div class="stat-content">
+                        <h3>Active Agents</h3>
+                        <p class="stat-value" id="active-agents">–</p>
+                        <p class="stat-sub"><span id="total-agents">0</span> total registered</p>
+                    </div>
+                    <div class="stat-decoration"></div>
                 </div>
-                <div class="stat-content">
-                    <h3>Total Agents</h3>
-                    <p class="stat-value" id="total-agents">–</p>
-                    <p class="stat-sub"><span id="active-agents">0</span> active now</p>
+                <div class="stat-card card-scans">
+                    <div class="stat-icon-wrap"><i data-lucide="radar" class="stat-icon"></i></div>
+                    <div class="stat-content">
+                        <h3>Scans</h3>
+                        <p class="stat-value" id="total-scans">–</p>
+                        <p class="stat-sub"><span id="scans-24h">0</span> in last 24h</p>
+                    </div>
+                    <div class="stat-decoration"></div>
                 </div>
-                <div class="stat-decoration"></div>
-            </div>
-            <div class="stat-card card-scans">
-                <div class="stat-icon-wrap">
-                    <i data-lucide="radar" class="stat-icon"></i>
+                <div class="stat-card card-vulns">
+                    <div class="stat-icon-wrap"><i data-lucide="bug" class="stat-icon"></i></div>
+                    <div class="stat-content">
+                        <h3>Vulnerabilities</h3>
+                        <p class="stat-value" id="total-vulns">–</p>
+                        <p class="stat-sub"><span id="critical-vulns">0</span> critical</p>
+                    </div>
+                    <div class="stat-decoration"></div>
                 </div>
-                <div class="stat-content">
-                    <h3>Total Scans</h3>
-                    <p class="stat-value" id="total-scans">–</p>
-                    <p class="stat-sub"><span id="scans-24h">0</span> last 24h</p>
+                <div class="stat-card card-misconfigs">
+                    <div class="stat-icon-wrap"><i data-lucide="alert-octagon" class="stat-icon"></i></div>
+                    <div class="stat-content">
+                        <h3>Misconfigurations</h3>
+                        <p class="stat-value" id="total-misconfigs">–</p>
+                        <p class="stat-sub"><span id="misconfig-fails">0</span> failures</p>
+                    </div>
+                    <div class="stat-decoration"></div>
                 </div>
-                <div class="stat-decoration"></div>
-            </div>
-            <div class="stat-card card-completed">
-                <div class="stat-icon-wrap">
-                    <i data-lucide="check-circle-2" class="stat-icon"></i>
+                <div class="stat-card card-docker">
+                    <div class="stat-icon-wrap"><i data-lucide="container" class="stat-icon"></i></div>
+                    <div class="stat-content">
+                        <h3>Docker Images</h3>
+                        <p class="stat-value" id="total-docker-images">–</p>
+                        <p class="stat-sub"><span id="docker-vulns">0</span> image vulns</p>
+                    </div>
+                    <div class="stat-decoration"></div>
                 </div>
-                <div class="stat-content">
-                    <h3>Completed</h3>
-                    <p class="stat-value" id="completed-scans">–</p>
-                    <p class="stat-sub">scans finished</p>
+                <div class="stat-card card-completed">
+                    <div class="stat-icon-wrap"><i data-lucide="check-circle-2" class="stat-icon"></i></div>
+                    <div class="stat-content">
+                        <h3>Completed</h3>
+                        <p class="stat-value" id="completed-scans">–</p>
+                        <p class="stat-sub">scans finished</p>
+                    </div>
+                    <div class="stat-decoration"></div>
                 </div>
-                <div class="stat-decoration"></div>
-            </div>
-            <div class="stat-card card-vulns">
-                <div class="stat-icon-wrap">
-                    <i data-lucide="alert-triangle" class="stat-icon"></i>
-                </div>
-                <div class="stat-content">
-                    <h3>Vulnerabilities</h3>
-                    <p class="stat-value" id="total-vulns">–</p>
-                    <p class="stat-sub"><span id="critical-vulns">0</span> critical</p>
-                </div>
-                <div class="stat-decoration"></div>
-            </div>
-        </section>
+            </section>
 
-        <!-- ─── Recent Scans ───────────────────────────────── -->
-        <section class="panel" id="scans-section">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <i data-lucide="clock" class="panel-icon"></i>
-                    <h2>Recent Scans</h2>
+            <!-- Severity Distribution -->
+            <section class="panel" id="severity-section">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="bar-chart-3" class="panel-icon"></i>
+                        <h2>Severity Distribution</h2>
+                    </div>
                 </div>
-                <button class="btn-ghost" onclick="if(typeof updateRecentScans==='function')updateRecentScans()"
-                    title="Refresh">
-                    <i data-lucide="refresh-cw" class="btn-ghost-icon"></i>
-                    Refresh
-                </button>
-            </div>
-            <div class="table-wrap">
-                <table id="recent-scans">
-                    <thead>
-                        <tr>
-                            <th>Scan ID</th>
-                            <th>Agent</th>
-                            <th>Type</th>
-                            <th>Status</th>
-                            <th>Started</th>
-                            <th>Duration</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td colspan="6" class="state-msg">Loading…</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </section>
+                <div class="severity-chart" id="severity-chart">
+                    <div class="sev-bar-row">
+                        <span class="sev-label">CRITICAL</span>
+                        <div class="sev-bar-track">
+                            <div class="sev-bar-fill sev-critical" id="sev-bar-critical" style="width:0%"></div>
+                        </div>
+                        <span class="sev-count" id="sev-count-critical">0</span>
+                    </div>
+                    <div class="sev-bar-row">
+                        <span class="sev-label">HIGH</span>
+                        <div class="sev-bar-track">
+                            <div class="sev-bar-fill sev-high" id="sev-bar-high" style="width:0%"></div>
+                        </div>
+                        <span class="sev-count" id="sev-count-high">0</span>
+                    </div>
+                    <div class="sev-bar-row">
+                        <span class="sev-label">MEDIUM</span>
+                        <div class="sev-bar-track">
+                            <div class="sev-bar-fill sev-medium" id="sev-bar-medium" style="width:0%"></div>
+                        </div>
+                        <span class="sev-count" id="sev-count-medium">0</span>
+                    </div>
+                    <div class="sev-bar-row">
+                        <span class="sev-label">LOW</span>
+                        <div class="sev-bar-track">
+                            <div class="sev-bar-fill sev-low" id="sev-bar-low" style="width:0%"></div>
+                        </div>
+                        <span class="sev-count" id="sev-count-low">0</span>
+                    </div>
+                </div>
+            </section>
 
-        <!-- ─── Trigger Scan ───────────────────────────────── -->
-        <section class="panel" id="trigger-section">
-            <div class="panel-header">
-                <div class="panel-title">
-                    <i data-lucide="play-circle" class="panel-icon"></i>
-                    <h2>Trigger New Scan</h2>
+            <!-- Recent Scans -->
+            <section class="panel" id="recent-scans-section">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="clock" class="panel-icon"></i>
+                        <h2>Recent Scans</h2>
+                    </div>
+                    <button class="btn-ghost" onclick="updateRecentScans()" title="Refresh">
+                        <i data-lucide="refresh-cw" class="btn-ghost-icon"></i> Refresh
+                    </button>
                 </div>
-            </div>
-            <form id="trigger-form">
-                <div class="form-row">
-                    <label>
-                        <span class="form-label">
-                            <i data-lucide="server" class="form-label-icon"></i>
-                            Target Agent
-                        </span>
-                        <select id="agent-select" required>
-                            <option value="">Loading agents…</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span class="form-label">
-                            <i data-lucide="package" class="form-label-icon"></i>
-                            Scan Type
-                        </span>
-                        <select id="scan-type" required>
-                            <option value="apt">APT Packages (Debian/Ubuntu)</option>
-                            <option value="rpm">RPM Packages (RHEL/CentOS)</option>
-                            <option value="docker">Docker Images (Trivy)</option>
-                        </select>
-                    </label>
+                <div class="table-wrap">
+                    <table id="recent-scans">
+                        <thead>
+                            <tr>
+                                <th>Scan ID</th>
+                                <th>Agent</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td colspan="6" class="state-msg">Loading…</td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
-                <button type="submit" class="btn-primary" id="trigger-btn">
-                    <i data-lucide="zap" class="btn-icon-svg"></i>
-                    Trigger Scan
-                </button>
-            </form>
-            <div id="trigger-status" hidden></div>
-        </section>
+            </section>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════════
+             TAB: Vulnerabilities
+             ════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-vulnerabilities">
+            <section class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="shield-alert" class="panel-icon"></i>
+                        <h2>All Vulnerabilities</h2>
+                    </div>
+                    <div class="filter-bar">
+                        <select id="vuln-severity-filter" class="filter-select">
+                            <option value="">All Severities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                        </select>
+                        <input type="text" id="vuln-search" class="filter-input" placeholder="Search CVE, package…">
+                        <button class="btn-ghost" onclick="fetchVulnerabilities()" title="Refresh">
+                            <i data-lucide="refresh-cw" class="btn-ghost-icon"></i>
+                        </button>
+                        <button class="btn-ghost" onclick="exportVulnsCSV()" title="Export CSV">
+                            <i data-lucide="download" class="btn-ghost-icon"></i> CSV
+                        </button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table id="vulns-table">
+                        <thead>
+                            <tr>
+                                <th>CVE</th>
+                                <th>Severity</th>
+                                <th>Package</th>
+                                <th>Version</th>
+                                <th>Fixed</th>
+                                <th>CVSS</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vulns-tbody">
+                            <tr>
+                                <td colspan="7" class="state-msg">Loading…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="pagination" id="vulns-pagination"></div>
+            </section>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════════
+             TAB: Docker
+             ════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-docker">
+            <section class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="container" class="panel-icon"></i>
+                        <h2>Scanned Docker Images</h2>
+                    </div>
+                    <button class="btn-ghost" onclick="fetchDockerImages()" title="Refresh">
+                        <i data-lucide="refresh-cw" class="btn-ghost-icon"></i> Refresh
+                    </button>
+                </div>
+                <div class="docker-grid" id="docker-grid">
+                    <p class="state-msg">Loading…</p>
+                </div>
+            </section>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════════
+             TAB: Misconfigurations
+             ════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-misconfigs">
+            <section class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="alert-octagon" class="panel-icon"></i>
+                        <h2>Misconfigurations & Findings</h2>
+                    </div>
+                    <div class="filter-bar">
+                        <select id="mc-severity-filter" class="filter-select">
+                            <option value="">All Severities</option>
+                            <option value="CRITICAL">Critical</option>
+                            <option value="HIGH">High</option>
+                            <option value="MEDIUM">Medium</option>
+                            <option value="LOW">Low</option>
+                        </select>
+                        <select id="mc-status-filter" class="filter-select">
+                            <option value="">All Status</option>
+                            <option value="FAIL">Fail</option>
+                            <option value="PASS">Pass</option>
+                            <option value="WARN">Warn</option>
+                        </select>
+                        <select id="mc-source-filter" class="filter-select">
+                            <option value="">All Sources</option>
+                            <option value="trivy">Trivy</option>
+                            <option value="prowler">Prowler</option>
+                            <option value="trivy-secret">Trivy (Secrets)</option>
+                        </select>
+                        <button class="btn-ghost" onclick="fetchMisconfigurations()" title="Refresh">
+                            <i data-lucide="refresh-cw" class="btn-ghost-icon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="misconfig-summary" id="misconfig-summary"></div>
+                <div class="table-wrap">
+                    <table id="misconfigs-table">
+                        <thead>
+                            <tr>
+                                <th>Check ID</th>
+                                <th>Title</th>
+                                <th>Severity</th>
+                                <th>Status</th>
+                                <th>Resource</th>
+                                <th>Source</th>
+                            </tr>
+                        </thead>
+                        <tbody id="misconfigs-tbody">
+                            <tr>
+                                <td colspan="6" class="state-msg">Loading…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════════
+             TAB: Agents
+             ════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-agents">
+            <section class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="server" class="panel-icon"></i>
+                        <h2>Registered Agents</h2>
+                    </div>
+                    <button class="btn-ghost" onclick="fetchAgents()" title="Refresh">
+                        <i data-lucide="refresh-cw" class="btn-ghost-icon"></i> Refresh
+                    </button>
+                </div>
+                <div class="agents-grid" id="agents-grid">
+                    <p class="state-msg">Loading…</p>
+                </div>
+            </section>
+
+            <!-- Trigger Scan -->
+            <section class="panel" id="trigger-section">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="play-circle" class="panel-icon"></i>
+                        <h2>Trigger New Scan</h2>
+                    </div>
+                </div>
+                <form id="trigger-form">
+                    <div class="form-row">
+                        <label>
+                            <span class="form-label">
+                                <i data-lucide="server" class="form-label-icon"></i> Target Agent
+                            </span>
+                            <select id="agent-select" required>
+                                <option value="">Loading agents…</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span class="form-label">
+                                <i data-lucide="package" class="form-label-icon"></i> Scan Type
+                            </span>
+                            <select id="scan-type" required>
+                                <option value="apt">APT Packages (Debian/Ubuntu)</option>
+                                <option value="rpm">RPM Packages (RHEL/CentOS)</option>
+                                <option value="docker">Docker Images (Trivy)</option>
+                                <option value="trivy-fs">Filesystem Scan (Trivy)</option>
+                                <option value="prowler">Security Audit (Prowler)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <button type="submit" class="btn-primary" id="trigger-btn">
+                        <i data-lucide="zap" class="btn-icon-svg"></i>
+                        Trigger Scan
+                    </button>
+                </form>
+                <div id="trigger-status" hidden></div>
+            </section>
+        </div>
+
+        <!-- ════════════════════════════════════════════════════════════
+             TAB: Scans
+             ════════════════════════════════════════════════════════════ -->
+        <div class="tab-content" id="tab-scans">
+            <section class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">
+                        <i data-lucide="scan-search" class="panel-icon"></i>
+                        <h2>All Scans</h2>
+                    </div>
+                    <div class="filter-bar">
+                        <select id="scan-status-filter" class="filter-select">
+                            <option value="">All Status</option>
+                            <option value="completed">Completed</option>
+                            <option value="running">Running</option>
+                            <option value="pending">Pending</option>
+                            <option value="failed">Failed</option>
+                        </select>
+                        <select id="scan-type-filter" class="filter-select">
+                            <option value="">All Types</option>
+                            <option value="apt">APT</option>
+                            <option value="rpm">RPM</option>
+                            <option value="docker">Docker</option>
+                            <option value="trivy-fs">Filesystem</option>
+                            <option value="prowler">Prowler</option>
+                        </select>
+                        <button class="btn-ghost" onclick="fetchAllScans()" title="Refresh">
+                            <i data-lucide="refresh-cw" class="btn-ghost-icon"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table id="all-scans-table">
+                        <thead>
+                            <tr>
+                                <th>Scan ID</th>
+                                <th>Agent</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="all-scans-tbody">
+                            <tr>
+                                <td colspan="6" class="state-msg">Loading…</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </div>
 
         <!-- ─── Scan Detail Modal ──────────────────────────── -->
         <div class="modal-overlay" id="scan-modal" hidden>
@@ -187,46 +453,38 @@
                 </div>
             </div>
         </div>
+
+        <!-- ─── Misconfiguration Detail Modal ──────────────── -->
+        <div class="modal-overlay" id="mc-modal" hidden>
+            <div class="modal">
+                <div class="modal-header">
+                    <div class="panel-title">
+                        <i data-lucide="alert-octagon" class="panel-icon"></i>
+                        <h2>Finding Detail</h2>
+                    </div>
+                    <button class="btn-ghost" onclick="closeMcModal()">
+                        <i data-lucide="x" class="btn-ghost-icon"></i>
+                    </button>
+                </div>
+                <div class="modal-body" id="mc-modal-body">
+                    Loading…
+                </div>
+            </div>
+        </div>
     </main>
 
     <footer>
         <div class="footer-inner">
-            <span><i data-lucide="shield-check" class="footer-icon"></i> SBOM Scanner v1.0</span>
+            <span><i data-lucide="shield-check" class="footer-icon"></i> SBOM Scanner v2.0</span>
             <span class="footer-sep">·</span>
             <span>Last refresh <span id="last-update">–</span></span>
         </div>
     </footer>
 
-    <!-- Load app.js with error detection -->
-    <script>window.__SBOM_LOADED = false;</script>
     <script src="/static/app.js"
         onerror="document.getElementById('connection-status').textContent='JS load failed'"></script>
     <script>
-        // Initialize Lucide icons
         if (typeof lucide !== 'undefined') { lucide.createIcons(); }
-        // Fallback if app.js didn't execute
-        if (!window.__SBOM_LOADED) {
-            document.getElementById('connection-status').textContent = 'JS init failed';
-            fetch('/api/stats').then(function (r) { return r.json() }).then(function (s) {
-                document.getElementById('total-agents').textContent = s.total_agents || 0;
-                document.getElementById('active-agents').textContent = s.active_agents || 0;
-                document.getElementById('total-scans').textContent = s.total_scans || 0;
-                document.getElementById('total-vulns').textContent = s.total_vulnerabilities || 0;
-                document.getElementById('connection-status').textContent = 'Fallback mode';
-            }).catch(function (e) { console.error('[SBOM] Fallback failed:', e); });
-            fetch('/api/agents').then(function (r) { return r.json() }).then(function (agents) {
-                var sel = document.getElementById('agent-select');
-                if (agents && agents.length > 0) {
-                    sel.innerHTML = '';
-                    agents.forEach(function (a) {
-                        var opt = document.createElement('option');
-                        opt.value = a.agent_id;
-                        opt.textContent = a.hostname || a.agent_id;
-                        sel.appendChild(opt);
-                    });
-                } else { sel.innerHTML = '<option value="">No agents registered</option>'; }
-            }).catch(function (e) { console.error('[SBOM] Agent fallback failed:', e); });
-        }
     </script>
 </body>
 

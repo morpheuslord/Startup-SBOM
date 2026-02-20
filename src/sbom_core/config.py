@@ -8,6 +8,7 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 8000
     db_path: str = "data/sbom.db"
+    output_dir: str = "output"
 
 class AgentConfig(BaseModel):
     id: str = "agent-def"
@@ -15,6 +16,7 @@ class AgentConfig(BaseModel):
     server_url: str = "http://localhost:8000"
     poll_interval: int = 30
     scanners: Optional[List[str]] = None
+    output_dir: str = "output"
 
 class SBOMConfig(BaseModel):
     server: ServerConfig = ServerConfig()

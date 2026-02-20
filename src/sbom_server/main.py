@@ -35,8 +35,10 @@ async def lifespan(app):
         init_database()
         print(f"Database initialized at {db_path}")
     else:
-        print(f"Database already exists at {db_path}")
-        
+        # Re-init to add any new tables (CREATE TABLE IF NOT EXISTS is safe)
+        init_database()
+        print(f"Database updated at {db_path}")
+
     print(f"Server starting on http://{settings.server.host}:{settings.server.port}")
     yield
     # Shutdown
@@ -47,7 +49,7 @@ async def lifespan(app):
 app = FastAPI(
     title="SBOM Scanner",
     description="Distributed SBOM scanning system",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
@@ -116,7 +118,7 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "version": "1.0.0",
+        "version": "2.0.0",
     }
 
 
@@ -138,7 +140,8 @@ async def register_agent(agent_data: Dict[str, Any]):
                 """
                 UPDATE agents
                 SET hostname = ?, ip_address = ?, os_info = ?,
-                    status = 'active', last_heartbeat = ?
+                    status = 'active', last_heartbeat = ?,
+                    config_json = ?
                 WHERE agent_id = ?
                 """,
                 (
@@ -146,6 +149,7 @@ async def register_agent(agent_data: Dict[str, Any]):
                     agent_data.get("ip_address"),
                     agent_data.get("os_info"),
                     datetime.utcnow().isoformat(),
+                    json.dumps({"scanners": agent_data.get("scanners", [])}),
                     agent_data["agent_id"],
                 ),
             )
@@ -153,8 +157,8 @@ async def register_agent(agent_data: Dict[str, Any]):
         else:
             cursor.execute(
                 """
-                INSERT INTO agents (agent_id, hostname, ip_address, os_info, status, last_heartbeat)
-                VALUES (?, ?, ?, ?, 'active', ?)
+                INSERT INTO agents (agent_id, hostname, ip_address, os_info, status, last_heartbeat, config_json)
+                VALUES (?, ?, ?, ?, 'active', ?, ?)
                 """,
                 (
                     agent_data["agent_id"],
@@ -162,6 +166,7 @@ async def register_agent(agent_data: Dict[str, Any]):
                     agent_data.get("ip_address"),
                     agent_data.get("os_info"),
                     datetime.utcnow().isoformat(),
+                    json.dumps({"scanners": agent_data.get("scanners", [])}),
                 ),
             )
             message = "registered"
@@ -183,7 +188,7 @@ async def list_agents():
         cursor.execute(
             """
             SELECT agent_id, hostname, ip_address, os_info, status,
-                   last_heartbeat, registered_at
+                   last_heartbeat, registered_at, config_json
             FROM agents
             ORDER BY registered_at DESC
             """
@@ -201,6 +206,13 @@ async def list_agents():
                 except (ValueError, TypeError):
                     pass
 
+            # Parse config_json for scanners info
+            if agent.get("config_json"):
+                try:
+                    agent["config"] = json.loads(agent["config_json"])
+                except (json.JSONDecodeError, TypeError):
+                    agent["config"] = {}
+
             agents.append(agent)
 
         return agents
@@ -216,7 +228,14 @@ async def get_agent(agent_id: str):
         if not row:
             raise HTTPException(status_code=404, detail="Agent not found")
 
-        return dict_from_row(row)
+        agent = dict_from_row(row)
+        if agent.get("config_json"):
+            try:
+                agent["config"] = json.loads(agent["config_json"])
+            except (json.JSONDecodeError, TypeError):
+                agent["config"] = {}
+
+        return agent
 
 
 @app.post("/api/agents/{agent_id}/heartbeat")
@@ -326,9 +345,11 @@ async def update_scan_results(
             ),
         )
 
+        data = results.get("data", {})
+
         # Store packages
-        if "packages" in results.get("data", {}):
-            for pkg in results["data"]["packages"]:
+        if "packages" in data:
+            for pkg in data["packages"]:
                 cursor.execute(
                     """
                     INSERT INTO packages (scan_id, name, version, package_manager, architecture, metadata_json)
@@ -345,8 +366,8 @@ async def update_scan_results(
                 )
 
         # Store vulnerabilities
-        if "vulnerabilities" in results.get("data", {}):
-            for vuln in results["data"]["vulnerabilities"]:
+        if "vulnerabilities" in data:
+            for vuln in data["vulnerabilities"]:
                 cursor.execute(
                     """
                     INSERT INTO vulnerabilities
@@ -362,6 +383,50 @@ async def update_scan_results(
                         (vuln.get("description", "") or "")[:500],
                         vuln.get("cvss_score"),
                         vuln.get("fixed_version"),
+                    ),
+                )
+
+        # Store Docker images
+        if "images" in data:
+            for img in data["images"]:
+                cursor.execute(
+                    """
+                    INSERT INTO docker_images
+                    (scan_id, image_name, tag, vulnerability_count,
+                     critical_count, high_count, medium_count, low_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        scan_db_id,
+                        img.get("image_name"),
+                        img.get("tag"),
+                        img.get("vulnerability_count", 0),
+                        img.get("critical_count", 0),
+                        img.get("high_count", 0),
+                        img.get("medium_count", 0),
+                        img.get("low_count", 0),
+                    ),
+                )
+
+        # Store misconfigurations
+        if "misconfigurations" in data:
+            for mc in data["misconfigurations"]:
+                cursor.execute(
+                    """
+                    INSERT INTO misconfigurations
+                    (scan_id, check_id, check_title, severity, status, resource, description, remediation, source)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        scan_db_id,
+                        mc.get("check_id"),
+                        mc.get("check_title"),
+                        mc.get("severity"),
+                        mc.get("status"),
+                        mc.get("resource"),
+                        (mc.get("description", "") or "")[:500],
+                        (mc.get("remediation", "") or "")[:500],
+                        mc.get("source", "unknown"),
                     ),
                 )
 
@@ -381,6 +446,7 @@ async def list_scans(
     limit: int = 50,
     status: Optional[str] = None,
     agent_id: Optional[str] = None,
+    scan_type: Optional[str] = None,
 ):
     """List scans with optional filters"""
     with get_db() as conn:
@@ -403,6 +469,10 @@ async def list_scans(
             query += " AND a.agent_id = ?"
             params.append(agent_id)
 
+        if scan_type:
+            query += " AND s.scan_type = ?"
+            params.append(scan_type)
+
         query += " ORDER BY s.started_at DESC LIMIT ?"
         params.append(limit)
 
@@ -412,7 +482,7 @@ async def list_scans(
 
 @app.get("/api/scans/{scan_id}")
 async def get_scan_details(scan_id: str):
-    """Get detailed scan results including packages and vulnerabilities"""
+    """Get detailed scan results including packages, vulnerabilities, docker images, and misconfigs"""
     with get_db() as conn:
         cursor = conn.cursor()
 
@@ -469,6 +539,37 @@ async def get_scan_details(scan_id: str):
         )
         scan["vulnerabilities"] = [dict_from_row(r) for r in cursor.fetchall()]
 
+        # Docker images
+        cursor.execute(
+            """
+            SELECT image_name, tag, vulnerability_count,
+                   critical_count, high_count, medium_count, low_count, scanned_at
+            FROM docker_images WHERE scan_id = ?
+            ORDER BY vulnerability_count DESC
+            """,
+            (scan_db_id,),
+        )
+        scan["docker_images"] = [dict_from_row(r) for r in cursor.fetchall()]
+
+        # Misconfigurations
+        cursor.execute(
+            """
+            SELECT check_id, check_title, severity, status, resource,
+                   description, remediation, source
+            FROM misconfigurations WHERE scan_id = ?
+            ORDER BY
+                CASE severity
+                    WHEN 'CRITICAL' THEN 1
+                    WHEN 'HIGH' THEN 2
+                    WHEN 'MEDIUM' THEN 3
+                    WHEN 'LOW' THEN 4
+                    ELSE 5
+                END
+            """,
+            (scan_db_id,),
+        )
+        scan["misconfigurations"] = [dict_from_row(r) for r in cursor.fetchall()]
+
         # Stats summary
         scan["stats"] = {
             "package_count": len(scan["packages"]),
@@ -477,6 +578,10 @@ async def get_scan_details(scan_id: str):
             "high_count": sum(1 for v in scan["vulnerabilities"] if v["severity"] == "HIGH"),
             "medium_count": sum(1 for v in scan["vulnerabilities"] if v["severity"] == "MEDIUM"),
             "low_count": sum(1 for v in scan["vulnerabilities"] if v["severity"] == "LOW"),
+            "docker_image_count": len(scan["docker_images"]),
+            "misconfiguration_count": len(scan["misconfigurations"]),
+            "misconfig_fail_count": sum(1 for m in scan["misconfigurations"] if m["status"] == "FAIL"),
+            "misconfig_pass_count": sum(1 for m in scan["misconfigurations"] if m["status"] == "PASS"),
         }
 
         return scan
@@ -538,6 +643,141 @@ async def get_pending_scans(agent_id: str):
         return [dict_from_row(row) for row in cursor.fetchall()]
 
 
+# ─── Docker Images Endpoints ───────────────────────────────────────────
+@app.get("/api/docker-images")
+async def list_docker_images(limit: int = 100):
+    """List all scanned Docker images"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT di.*, s.scan_id as scan_identifier, a.agent_id as agent_identifier, a.hostname
+            FROM docker_images di
+            JOIN scans s ON di.scan_id = s.id
+            JOIN agents a ON s.agent_id = a.id
+            ORDER BY di.scanned_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        return [dict_from_row(row) for row in cursor.fetchall()]
+
+
+@app.get("/api/docker-images/{scan_id}")
+async def get_docker_images_by_scan(scan_id: str):
+    """Get Docker images for a specific scan"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT di.*
+            FROM docker_images di
+            JOIN scans s ON di.scan_id = s.id
+            WHERE s.scan_id = ?
+            ORDER BY di.vulnerability_count DESC
+            """,
+            (scan_id,),
+        )
+        return [dict_from_row(row) for row in cursor.fetchall()]
+
+
+# ─── Misconfigurations Endpoints ───────────────────────────────────────
+@app.get("/api/misconfigurations")
+async def list_misconfigurations(
+    limit: int = 100,
+    severity: Optional[str] = None,
+    status: Optional[str] = None,
+    source: Optional[str] = None,
+):
+    """List misconfigurations with optional filters"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        query = """
+            SELECT m.*, s.scan_id as scan_identifier, a.agent_id as agent_identifier, a.hostname
+            FROM misconfigurations m
+            JOIN scans s ON m.scan_id = s.id
+            JOIN agents a ON s.agent_id = a.id
+            WHERE 1=1
+        """
+        params = []
+
+        if severity:
+            query += " AND m.severity = ?"
+            params.append(severity.upper())
+
+        if status:
+            query += " AND m.status = ?"
+            params.append(status.upper())
+
+        if source:
+            query += " AND m.source = ?"
+            params.append(source)
+
+        query += """
+            ORDER BY
+                CASE m.severity
+                    WHEN 'CRITICAL' THEN 1
+                    WHEN 'HIGH' THEN 2
+                    WHEN 'MEDIUM' THEN 3
+                    WHEN 'LOW' THEN 4
+                    ELSE 5
+                END
+            LIMIT ?
+        """
+        params.append(limit)
+
+        cursor.execute(query, params)
+        return [dict_from_row(row) for row in cursor.fetchall()]
+
+
+# ─── Vulnerabilities Endpoint ──────────────────────────────────────────
+@app.get("/api/vulnerabilities")
+async def list_vulnerabilities(
+    limit: int = 100,
+    severity: Optional[str] = None,
+    search: Optional[str] = None,
+):
+    """List all vulnerabilities with optional filters"""
+    with get_db() as conn:
+        cursor = conn.cursor()
+
+        query = """
+            SELECT v.*, s.scan_id as scan_identifier, s.scan_type,
+                   a.agent_id as agent_identifier, a.hostname
+            FROM vulnerabilities v
+            JOIN scans s ON v.scan_id = s.id
+            JOIN agents a ON s.agent_id = a.id
+            WHERE 1=1
+        """
+        params = []
+
+        if severity:
+            query += " AND v.severity = ?"
+            params.append(severity.upper())
+
+        if search:
+            query += " AND (v.cve_id LIKE ? OR v.package_name LIKE ? OR v.description LIKE ?)"
+            search_pattern = f"%{search}%"
+            params.extend([search_pattern, search_pattern, search_pattern])
+
+        query += """
+            ORDER BY
+                CASE v.severity
+                    WHEN 'CRITICAL' THEN 1
+                    WHEN 'HIGH' THEN 2
+                    WHEN 'MEDIUM' THEN 3
+                    WHEN 'LOW' THEN 4
+                    ELSE 5
+                END
+            LIMIT ?
+        """
+        params.append(limit)
+
+        cursor.execute(query, params)
+        return [dict_from_row(row) for row in cursor.fetchall()]
+
+
 # ─── Statistics ─────────────────────────────────────────────────────────
 @app.get("/api/stats")
 async def get_statistics():
@@ -570,6 +810,28 @@ async def get_statistics():
             "SELECT COUNT(*) FROM scans WHERE started_at > datetime('now', '-24 hours')"
         )
         stats["scans_last_24h"] = cursor.fetchone()[0]
+
+        # Docker image stats
+        cursor.execute("SELECT COUNT(*) FROM docker_images")
+        stats["total_docker_images"] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT SUM(vulnerability_count) FROM docker_images")
+        row = cursor.fetchone()
+        stats["total_docker_vulns"] = row[0] if row[0] else 0
+
+        # Misconfiguration stats
+        cursor.execute("SELECT COUNT(*) FROM misconfigurations")
+        stats["total_misconfigurations"] = cursor.fetchone()[0]
+
+        cursor.execute("SELECT severity, COUNT(*) FROM misconfigurations GROUP BY severity")
+        stats["misconfigs_by_severity"] = {row[0]: row[1] for row in cursor.fetchall()}
+
+        cursor.execute("SELECT status, COUNT(*) FROM misconfigurations GROUP BY status")
+        stats["misconfigs_by_status"] = {row[0]: row[1] for row in cursor.fetchall()}
+
+        # Scan type breakdown
+        cursor.execute("SELECT scan_type, COUNT(*) FROM scans GROUP BY scan_type")
+        stats["scans_by_type"] = {row[0]: row[1] for row in cursor.fetchall()}
 
         return stats
 

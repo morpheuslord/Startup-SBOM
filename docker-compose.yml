@@ -1,19 +1,27 @@
 version: '3.8'
 
+networks:
+  sbom-net:
+    driver: bridge
+
 services:
   sbom-server:
     build:
       context: .
       dockerfile: Dockerfile.server
     container_name: sbom-server
+    profiles: [ "server", "full" ]
     ports:
       - "8000:8000"
     volumes:
       - ./config:/app/config
       - ./data:/app/data
       - ./database:/app/database
+      - ./output:/app/output
     environment:
       - SBOM_SERVER_CONFIG=/app/config/server.conf
+    networks:
+      - sbom-net
     restart: always
 
   sbom-agent:
@@ -21,10 +29,14 @@ services:
       context: .
       dockerfile: Dockerfile.agent
     container_name: sbom-agent-01
-
+    profiles: [ "agent", "full" ]
     volumes:
       - ./config:/app/config
+      - ./output:/app/output
       - /var/run/docker.sock:/var/run/docker.sock
+      - /:/mnt/host:ro
     environment:
       - SBOM_AGENT_CONFIG=/app/config/agent.conf
+    networks:
+      - sbom-net
     restart: always

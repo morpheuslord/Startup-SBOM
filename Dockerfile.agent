@@ -9,13 +9,19 @@ RUN apt-get update && apt-get install -y \
     lsb-release \
     dpkg \
     rpm \
+    apt-transport-https \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI (for calling docker commands on host socket)
-RUN curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh
+RUN curl -fsSL https://get.docker.com -o get-docker.sh && sh get-docker.sh && rm get-docker.sh
 
-# Install Trivy
-RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+# Install Trivy (system package via APT repository)
+RUN wget -qO - https://aquasecurity.github.io/trivy-repo/deb/public.key | gpg --dearmor -o /usr/share/keyrings/trivy.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/trivy.gpg] https://aquasecurity.github.io/trivy-repo/deb generic main" \
+    | tee /etc/apt/sources.list.d/trivy.list \
+    && apt-get update && apt-get install -y trivy \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Poetry
 RUN curl -sSL https://install.python-poetry.org | python3 -
@@ -33,13 +39,16 @@ RUN if [ ! -f poetry.lock ]; then poetry lock; fi
 RUN poetry config virtualenvs.create false \
     && poetry install --no-interaction --no-ansi --no-root
 
+# Install Prowler (via pip, after poetry deps so pip is available)
+RUN pip install --no-cache-dir prowler
+
 # Copy source code
 COPY src/ ./src/
 # Install the project itself
 RUN poetry install --no-interaction --no-ansi
 
-# Configuration volume
-VOLUME ["/app/config"]
+# Configuration and output volumes
+VOLUME ["/app/config", "/app/output"]
 
 ENV PYTHONPATH=/app/src
 ENV SBOM_CONFIG=/app/config/sbom.conf

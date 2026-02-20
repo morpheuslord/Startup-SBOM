@@ -29,8 +29,8 @@ COPY database/ ./database/
 # Install the project itself
 RUN poetry install --no-interaction --no-ansi
 
-# Configuration volume
-VOLUME ["/app/config", "/app/data"]
+# Configuration, data, and output volumes
+VOLUME ["/app/config", "/app/data", "/app/output"]
 
 ENV PYTHONPATH=/app/src
 ENV SBOM_Config=/app/config/sbom.conf
