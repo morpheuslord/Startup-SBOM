@@ -27,11 +27,22 @@ Startup-SBOM is a distributed Software Bill of Materials (SBOM) scanning system 
 The easiest way to run the full system is using Docker Compose.
 
 ```bash
-docker-compose up --build
+docker compose --profile server up -d --build
+# or for full stack: docker compose --profile full up -d --build
+```
+
+After editing `docker-compose.yml` (e.g. security or env changes), recreate the server so new options apply:
+
+```bash
+docker compose --profile server up -d --force-recreate
 ```
 
 - **Server Dashboard**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
+
+#### Troubleshooting
+
+- **Permission denied on server startup** (e.g. `socket.socketpair()` / asyncio): Compose only applies new `security_opt` when the container is recreated. Run `docker compose --profile server up -d --force-recreate`. If the error persists, the runtime may be using a stricter profile (e.g. Kubernetes). Relax seccomp (and AppArmor if applicable) in the pod/container spec (Kubernetes: `securityContext.seccompProfile.type: Unconfined`). With plain `docker run`, use `--security-opt seccomp=unconfined` and `--security-opt apparmor=unconfined`.
 
 ### 2. Manual Installation (Development)
 

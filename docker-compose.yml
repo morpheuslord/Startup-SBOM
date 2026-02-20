@@ -22,9 +22,10 @@ services:
     networks:
       - sbom-net
     restart: always
-    # asyncio event loop needs socketpair(); some seccomp profiles block it
+    # asyncio event loop needs socketpair(); some seccomp/AppArmor profiles block it
     security_opt:
       - seccomp:unconfined
+      - apparmor=unconfined
 
   sbom-agent:
     build:
