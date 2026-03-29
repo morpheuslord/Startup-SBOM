@@ -74,3 +74,5 @@ For detailed documentation on the methodology and process, please visit the [Wik
 
 ## Ideas and Discussions
 Ideas regarding this topic are welcome in the discussions page.
+
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19307312.svg)](https://doi.org/10.5281/zenodo.19307312)
