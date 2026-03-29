@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+title: "Startup-SBOM"
+authors:
+  - alias: "morpheuslord"
+  - name: "Chiranjeevi G"
+    affiliation: "Cygnenoir-Cyber"
+version: release-1
+date-released: 2026-03-29
+doi: 10.5281/zenodo.19307312
+license: MIT
+url: "https://github.com/morpheuslord/Startup-SBOM"
+repository-code: "https://github.com/morpheuslord/Startup-SBOM/tree/release-1"
