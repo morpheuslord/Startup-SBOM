@@ -83,7 +83,8 @@ def test_docker_archive_legacy(tmp_path: Path, scratch: Path, outer: str | None)
             assert info.env_keys == ["DB_PASSWORD", "INNOCENT", "PATH"]
             assert info.redacted_env_keys == ["DB_PASSWORD", "INNOCENT"]
             dumped = info.model_dump_json()
-            for secret in ("hunter2", "AKIAABCDEFGHIJKLMNOP", "sw0rdfish", '/usr/bin"'):
+            assert info.path == ["/usr/bin"]  # PATH is the one env value deliberately kept
+            for secret in ("hunter2", "AKIAABCDEFGHIJKLMNOP", "sw0rdfish"):
                 assert secret not in dumped
             # metadata is out-of-band: nothing injected into the tree
             assert acq.fs.listdir("/") == ["bin", "etc", "srv", "usr"]

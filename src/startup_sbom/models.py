@@ -204,6 +204,7 @@ class ContainerInfo(_Model):
     user: str | None = None
     exposed_ports: list[str] = Field(default_factory=list)
     env_keys: list[str] = Field(default_factory=list)  # values never recorded
+    path: list[str] = Field(default_factory=list)  # PATH directories (not a secret)
     redacted_env_keys: list[str] = Field(default_factory=list)
     labels: dict[str, str] = Field(default_factory=dict)
     privileged: bool | None = None

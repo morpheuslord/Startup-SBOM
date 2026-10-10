@@ -37,6 +37,7 @@ from startup_sbom.sources.validate import (
     is_container_ref,
     is_image_ref,
     opt_str,
+    path_from_env,
     sanitize_message,
     split_env,
 )
@@ -312,6 +313,7 @@ def container_info_from_inspect(
         user=opt_str(cfg.get("User"), 256),
         exposed_ports=sorted(clean(p, 64) for p in list(_dict(exposed))[:1000]),
         env_keys=keys,
+        path=path_from_env(cfg.get("Env")),
         redacted_env_keys=redacted,
         labels=clean_labels(cfg.get("Labels")),
         privileged=privileged if isinstance(privileged, bool) else None,

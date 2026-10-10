@@ -25,6 +25,7 @@ from startup_sbom.sources.validate import (
     clean_argv,
     clean_labels,
     opt_str,
+    path_from_env,
     split_env,
 )
 
@@ -339,6 +340,7 @@ def image_container_info(
         user=opt_str(cfg.get("User"), 256),
         exposed_ports=exposed,
         env_keys=keys,
+        path=path_from_env(cfg.get("Env")),
         redacted_env_keys=redacted,
         labels=clean_labels(cfg.get("Labels")),
     )

@@ -151,6 +151,17 @@ def split_env(env: object) -> tuple[list[str], list[str]]:
     return sorted(keys), sorted(redacted)
 
 
+def path_from_env(env: object) -> list[str]:
+    """Absolute directories of a ``PATH=...`` entry (the only env value ever kept)."""
+    if not isinstance(env, list):
+        return []
+    for item in env[:10_000]:
+        if isinstance(item, str) and item.startswith("PATH="):
+            dirs = [clean(d, 1024) for d in item[5:].split(":")[:64]]
+            return [d for d in dirs if d.startswith("/") and not looks_like_secret(d)]
+    return []
+
+
 def redact_text(text: str) -> str:
     """Mask ``--password=x``-style arguments and credential-shaped substrings."""
     text = _ARG_SECRET_RE.sub(lambda m: m.group("k") + REDACTED, text)
