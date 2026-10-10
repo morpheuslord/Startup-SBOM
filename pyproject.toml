@@ -113,7 +113,7 @@ files = ["src"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["cvss.*", "backports.*", "compression.*"]
+module = ["cvss.*", "backports.*", "compression.*", "license_expression.*"]
 ignore_missing_imports = true
 
 [tool.pydantic-mypy]
