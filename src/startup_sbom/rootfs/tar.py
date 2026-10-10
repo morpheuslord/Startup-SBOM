@@ -9,6 +9,7 @@ ownership and file capabilities survive and no hostile member can escape.
 from __future__ import annotations
 
 import base64
+import contextlib
 import io
 import os
 import posixpath
@@ -138,10 +139,8 @@ def member_xattrs(m: tarfile.TarInfo) -> dict[str, bytes] | None:
             out[k[len("SCHILY.xattr.") :]] = v.encode("utf-8", "surrogateescape")
         elif k.startswith("LIBARCHIVE.xattr."):
             name = urllib.parse.unquote(k[len("LIBARCHIVE.xattr.") :])
-            try:
+            with contextlib.suppress(ValueError):
                 out[name] = base64.b64decode(v)
-            except ValueError:
-                pass
     return out or None
 
 
@@ -211,9 +210,17 @@ class LayeredTarRootFS(RootFS):
         return posixpath.join(parent, parts[-1])
 
     def _apply_layer(self, idx: int, blob: LayerBlob) -> None:
+        members: list[tarfile.TarInfo] = []
         try:
             with blob.open() as fobj, tarfile.open(fileobj=fobj, mode="r:") as tf:
-                members = list(tf)
+                while (m := tf.next()) is not None:
+                    tf.members.clear()  # keep memory bounded by our own cap
+                    if len(members) + len(self._entries) >= self.max_entries:
+                        raise RootFSError("entry limit exceeded (possible tar bomb)")
+                    if m.issparse():
+                        self.warnings.append(f"layer {idx}: skipped sparse member {m.name!r}")
+                        continue
+                    members.append(m)
         except tarfile.TarError as exc:
             raise RootFSError(f"layer {idx} ({blob.label or blob.path}): {exc}") from exc
 

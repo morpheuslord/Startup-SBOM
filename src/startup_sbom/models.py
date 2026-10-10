@@ -185,6 +185,7 @@ class ContainerMount(_Model):
     destination: str
     read_write: bool = True
     kind: str | None = None
+    engine_socket: bool = False  # docker/podman/containerd API socket mounted inside
 
 
 class ContainerInfo(_Model):

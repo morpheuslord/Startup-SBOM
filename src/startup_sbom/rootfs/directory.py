@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import stat as st_mod
 import sys
@@ -76,12 +77,10 @@ class DirectoryRootFS(RootFS):
         xattrs: dict[str, bytes] = {}
         getxattr = getattr(os, "getxattr", None)
         if getxattr is not None and st_mod.S_ISREG(st.st_mode) and st.st_mode & 0o111:
-            try:
+            with contextlib.suppress(OSError):
                 xattrs["security.capability"] = getxattr(
                     host, "security.capability", follow_symlinks=False
                 )
-            except OSError:
-                pass
         return FileStat(
             path=cpath,
             mode=st.st_mode,

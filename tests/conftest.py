@@ -10,10 +10,9 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from fsbuilder import Spec, build_dir, build_tar  # noqa: E402
-
-from startup_sbom.context import ScanContext, ScanOptions  # noqa: E402
-from startup_sbom.rootfs import DirectoryRootFS, LayerBlob, LayeredTarRootFS, RootFS  # noqa: E402
+from fsbuilder import Spec, build_dir, build_tar
+from startup_sbom.context import ScanContext, ScanOptions
+from startup_sbom.rootfs import DirectoryRootFS, LayerBlob, LayeredTarRootFS, RootFS
 
 
 @pytest.fixture
@@ -50,7 +49,7 @@ def make_fs(
     """Parametrised: the same spec through both backends."""
     if request.param == "dir":
         return make_dir_fs
-    return lambda spec: make_tar_fs(spec)
+    return make_tar_fs
 
 
 @pytest.fixture

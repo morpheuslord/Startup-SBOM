@@ -86,7 +86,7 @@ select = [
   "RUF", "S",
 ]
 ignore = [
-  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR0917", "PLR2004",
   "PLC0415",
   "PTH",       # in-image paths are POSIX strings handled with posixpath on purpose
   "TC001", "TC002", "TC003",

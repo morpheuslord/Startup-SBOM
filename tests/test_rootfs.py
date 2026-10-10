@@ -6,8 +6,8 @@ import os
 import sys
 
 import pytest
-from fsbuilder import Dir, File, Symlink, Whiteout
 
+from fsbuilder import Dir, File, Symlink, Whiteout
 from startup_sbom.errors import PathNotFoundError, RootFSError, SymlinkLoopError
 from startup_sbom.pkgdb.ownership import FileOwnerIndex
 
@@ -37,8 +37,8 @@ def test_dotdot_cannot_escape_root(make_fs):
 
 @needs_symlinks
 def test_host_files_never_reachable(make_dir_fs):
-    host_secret = "/etc/hostname"
-    fs = make_dir_fs({"/x": Symlink(host_secret), "/y": Symlink("/" + "../" * 20 + "etc")})
+    host_file = "/etc/hostname"
+    fs = make_dir_fs({"/x": Symlink(host_file), "/y": Symlink("/" + "../" * 20 + "etc")})
     with pytest.raises(PathNotFoundError):
         fs.read_text("/x")
     assert not fs.exists("/y/hostname")
