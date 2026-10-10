@@ -40,6 +40,7 @@ dependencies = [
   "httpx>=0.28.1,<1",
   "cyclonedx-python-lib>=11,<12",
   "packageurl-python>=0.17",
+  "license-expression>=30.4",
   "platformdirs>=4.4",
   "cvss>=3.6",
   "backports.zstd>=1.0; python_version < '3.14'",
