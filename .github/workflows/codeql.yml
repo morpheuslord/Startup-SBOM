@@ -2,7 +2,7 @@ name: CodeQL
 
 on:
   push:
-    branches: [main]
+    branches: [main, refactoring] # drop refactoring after the 2.0 merge
   pull_request:
   schedule:
     - cron: "27 4 * * 1"
