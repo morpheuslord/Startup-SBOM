@@ -467,7 +467,13 @@ def _open_decompressed(ctx: ScanContext, path: str) -> tuple[BinaryIO | None, st
     try:
         kind = _sniff(ctx.fs.read_head(path, 8))
         if kind == "lz4":
-            return None, kind
+            from startup_sbom.lz4frame import LZ4Error, decompress
+
+            try:
+                data = decompress(ctx.fs.read_bytes(path, MAX_INDEX_BYTES), MAX_DECOMPRESSED_BYTES)
+            except LZ4Error:
+                return None, kind
+            return cast("BinaryIO", io.BytesIO(data)), kind
         raw = ctx.fs.open(path)
     except (RootFSError, OSError):
         return None, "unreadable"
