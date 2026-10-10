@@ -365,6 +365,7 @@ class KEVInfo(_Model):
     required_action: str | None = None
     vendor_project: str | None = None
     product: str | None = None
+    forensic_triage: str | None = None
 
 
 class Vulnerability(_Model):
@@ -442,6 +443,8 @@ class Threat(_Model):
     score_factors: dict[str, float] = Field(default_factory=dict)
     narrative: str
     remediation: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    intel_summary: str | None = None
 
 
 class AttackStep(_Model):
@@ -524,6 +527,85 @@ class SupplyChain(_Model):
     edges: list[GraphEdge] = Field(default_factory=list)
 
 
+# --------------------------------------------------------------------------- intel
+class ExploitRef(_Model):
+    source: str  # exploitdb | metasploit | nuclei
+    id: str
+    title: str | None = None
+    url: str | None = None
+    kind: str | None = None  # exploit | auxiliary | template | ...
+    verified: bool | None = None
+    published: str | None = None
+
+
+class PocRepo(_Model):
+    """Metadata of a public proof-of-concept repository (never cloned or executed)."""
+
+    full_name: str
+    url: str
+    description: str | None = None
+    stars: int = 0
+    created_at: str | None = None
+    pushed_at: str | None = None
+    untrusted: bool = True
+
+
+class VendorStatus(_Model):
+    vendor: str  # ubuntu | redhat | debian | ...
+    severity: str | None = None
+    status: str | None = None
+    statement: str | None = None
+    mitigation: str | None = None
+    advisories: list[str] = Field(default_factory=list)
+    url: str | None = None
+
+
+class IntelRecord(_Model):
+    """One advisory or article fetched for a CVE.  Unstructured text is untrusted."""
+
+    id: str
+    source: str
+    url: str
+    final_url: str | None = None
+    kind: str  # advisory | exploit | poc | writeup | patch | vendor | scanner | mailing-list
+    title: str | None = None
+    site: str | None = None
+    published: str | None = None
+    snippet: str | None = None
+    cves: list[str] = Field(default_factory=list)
+    fetched_at: datetime
+    trust: str = "unstructured"  # structured | unstructured
+    exploit_maturity: str | None = None
+    http_status: int | None = None
+    content_type: str | None = None
+    sha256: str | None = None
+    truncated: bool = False
+    text_ref: str | None = None  # key of the cleaned full text in the intel store
+
+
+class IntelBundle(_Model):
+    """Everything prefetched about one CVE."""
+
+    cve: str
+    exploit_maturity: str = "none"  # none | poc | functional | weaponized
+    exploitation: str = "none"  # SSVC semantics: none | public_poc | active
+    exploit_available: bool = False
+    exploit_sources: list[str] = Field(default_factory=list)
+    metasploit: list[ExploitRef] = Field(default_factory=list)
+    exploitdb: list[ExploitRef] = Field(default_factory=list)
+    nuclei: list[ExploitRef] = Field(default_factory=list)
+    poc_repos_count: int = 0
+    poc_repos_top: list[PocRepo] = Field(default_factory=list)
+    cisa_ssvc: dict[str, str] = Field(default_factory=dict)
+    kev: KEVInfo | None = None
+    epss_trend: list[tuple[str, float]] = Field(default_factory=list)
+    vendor_status: list[VendorStatus] = Field(default_factory=list)
+    advisories: list[IntelRecord] = Field(default_factory=list)
+    articles: list[IntelRecord] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    fetched_at: datetime
+
+
 # --------------------------------------------------------------------------- report
 class TargetInfo(_Model):
     kind: str  # dir | host | tar | docker-archive | oci-dir | oci-archive | container
@@ -580,6 +662,7 @@ class Report(_Model):
     threats: list[Threat] = Field(default_factory=list)
     attack_chains: list[AttackChain] = Field(default_factory=list)
     supply_chain: SupplyChain = Field(default_factory=SupplyChain)
+    intel: list[IntelBundle] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
     def package_by_id(self) -> dict[str, Package]:

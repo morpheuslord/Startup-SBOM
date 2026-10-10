@@ -214,7 +214,9 @@ class LayeredTarRootFS(RootFS):
         try:
             with blob.open() as fobj, tarfile.open(fileobj=fobj, mode="r:") as tf:
                 while (m := tf.next()) is not None:
-                    tf.members.clear()  # keep memory bounded by our own cap
+                    cached = getattr(tf, "members", None)  # tarfile caches every header
+                    if isinstance(cached, list):
+                        cached.clear()  # keep memory bounded by our own cap
                     if len(members) + len(self._entries) >= self.max_entries:
                         raise RootFSError("entry limit exceeded (possible tar bomb)")
                     if m.issparse():

@@ -41,3 +41,7 @@ class NetworkError(StartupSBOMError):
 
 class OutputError(StartupSBOMError):
     """A report could not be written."""
+
+
+class ScanCancelledError(StartupSBOMError):
+    """The scan was cancelled through its cancel event."""
