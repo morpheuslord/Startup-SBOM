@@ -13,6 +13,7 @@ from itertools import pairwise
 
 from startup_sbom.models import AttackChain, Report
 from startup_sbom.report.native import RenderOptions
+from startup_sbom.textsafe import clean
 
 MAX_LABEL = 80
 _CTRL = re.compile(r"[\x00-\x1f\x7f\u2028\u2029]+")
@@ -71,7 +72,7 @@ class Graph:
 
 def one_line(text: str, limit: int = MAX_LABEL) -> str:
     """Collapse control characters/newlines to spaces and shorten to ``limit``."""
-    s = " ".join(_CTRL.sub(" ", text).split())
+    s = " ".join(clean(_CTRL.sub(" ", text)).split())
     return s if len(s) <= limit else s[: limit - 1] + "…"
 
 

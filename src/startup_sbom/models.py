@@ -7,12 +7,14 @@ and versioned through :data:`SCHEMA_VERSION`.
 
 from __future__ import annotations
 
+import math
 from datetime import datetime
 from enum import StrEnum
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "2.1"
 
 
 class _Model(BaseModel):
@@ -413,6 +415,8 @@ class SSVC(_Model):
     technical_impact: str  # partial | total
     exposure: str  # small | controlled | open
     decision: SSVCDecision
+    trace: SSVCTrace | None = None  # coordinator tree decision path
+    bod_26_04: SSVCTrace | None = None  # deployer timeline tree decision path
 
 
 class Threat(_Model):
@@ -443,11 +447,14 @@ class Threat(_Model):
     score_factors: dict[str, float] = Field(default_factory=dict)
     narrative: str
     remediation: str | None = None
-    evidence: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)  # Evidence / Derivation ids
     intel_summary: str | None = None
+    confidence: Confidence = Confidence.HIGH  # weakest link over the evidence
+    explanation: Explanation | None = None  # exact additive breakdown of risk_score
 
 
 class AttackStep(_Model):
+    id: str | None = None  # canonical edge id, shared by chains using the same step
     rule: str
     title: str
     from_state: str
@@ -459,6 +466,7 @@ class AttackStep(_Model):
     evidence: list[str] = Field(default_factory=list)
     mitigated_by: list[str] = Field(default_factory=list)
     likelihood: float = 0.0
+    derivation: str | None = None  # Derivation.id that fired this step
 
 
 class AttackChain(_Model):
@@ -472,6 +480,7 @@ class AttackChain(_Model):
     ssvc_decision: SSVCDecision
     mitigated: bool = False
     narrative: str
+    explanation: Explanation | None = None
 
 
 # --------------------------------------------------------------------------- supply chain
@@ -606,6 +615,220 @@ class IntelBundle(_Model):
     fetched_at: datetime
 
 
+# --------------------------------------------------------------------------- explainability
+class EvidenceKind(StrEnum):
+    FILE = "file"  # a file read inside the target root
+    PACKAGE_DB = "package_db"
+    ADVISORY = "advisory"
+    FEED = "feed"  # EPSS / KEV / CISA ADP snapshot
+    CONTAINER_CONFIG = "container_config"
+    USER_INPUT = "user_input"
+    DEFAULT = "default"  # an assumption the tool made (always surfaced)
+
+
+class Evidence(_Model):
+    """An atomic, citable fact with its source.  Ids are content-addressed."""
+
+    id: str  # "ev:" + sha256(kind|source|locator|statement)[:12]
+    kind: EvidenceKind
+    statement: str
+    source: str  # in-image POSIX path, "osv:DSA-5724-1", "epss:2026-10-09", ...
+    locator: str | None = None
+    digest: str | None = None
+    retrieved: str | None = None
+    confidence: Confidence = Confidence.HIGH
+
+
+class Derivation(_Model):
+    """One rule firing: premises (evidence or other derivations) -> conclusion."""
+
+    id: str  # "dv:<rule>:<hash>"
+    conclusion: str
+    rule: str
+    premises: list[str] = Field(default_factory=list)
+    confidence: Confidence = Confidence.HIGH
+
+
+class ExplanationMethod(StrEnum):
+    SEQUENTIAL_LMDI = "sequential+lmdi"
+    LMDI = "lmdi"
+    SHAPLEY = "shapley_exact"
+    NOISY_OR_LOG = "noisy_or_log"
+    RULE_TRACE = "rule_trace"
+
+
+class Factor(_Model):
+    name: str
+    label: str
+    value: float | str | bool | None = None
+    multiplier: float | None = None
+    kind: Literal["additive", "multiplicative"]
+    contribution: float  # signed points on the score scale
+    evidence: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class Explanation(_Model):
+    """Exact additive decomposition: ``baseline + sum(contributions) == total``."""
+
+    subject: str
+    method: ExplanationMethod
+    formula: str
+    formula_version: str = "risk/1"
+    baseline: float
+    total: float
+    factors: list[Factor]
+    confidence: Confidence = Confidence.HIGH
+    limits: list[str] = Field(default_factory=list)  # knowledge limits (NIST IR 8312)
+
+    @model_validator(mode="after")
+    def _exact(self) -> Explanation:
+        s = self.baseline + sum(f.contribution for f in self.factors)
+        if not math.isclose(s, self.total, abs_tol=1e-6):
+            raise ValueError(f"explanation not exact: {s} != {self.total}")
+        return self
+
+
+class DecisionNode(_Model):
+    decision_point: str
+    value: str
+    alternatives: list[str]
+    rationale: str
+    evidence: list[str] = Field(default_factory=list)
+    source: Literal["cisa_adp", "computed", "user", "default"] = "computed"
+
+
+class SSVCTrace(_Model):
+    tree: str
+    path: list[DecisionNode]
+    row: int
+    outcome: str
+    flips: list[str] = Field(default_factory=list)
+
+
+class Fix(_Model):
+    id: str
+    kind: Literal["upgrade", "hardening", "config", "remove"]
+    target: str
+    action: str
+    cost: float = 1.0
+    breaks: list[str] = Field(default_factory=list)  # AttackStep ids
+    resolves: list[str] = Field(default_factory=list)  # Threat ids
+
+
+class WhatIf(_Model):
+    fixes: list[str]
+    chains_broken: list[str] = Field(default_factory=list)
+    threats_resolved: list[str] = Field(default_factory=list)
+    risk_before: float
+    risk_after: float
+    method: Literal["single", "greedy_set_cover", "exact_hitting_set", "min_cut"]
+    note: str = ""
+
+
+class Driver(_Model):
+    kind: Literal["chain", "threat", "package", "service", "vendor"]
+    id: str
+    label: str
+    contribution: float
+    share: float
+    cumulative: float
+
+
+class GlobalExplanation(_Model):
+    system_risk: float
+    method: ExplanationMethod = ExplanationMethod.NOISY_OR_LOG
+    formula: str
+    drivers: list[Driver] = Field(default_factory=list)
+    pareto_80: dict[str, int] = Field(default_factory=dict)
+
+
+class NumericClaim(_Model):
+    ref: str
+    field: str
+    value: float
+
+
+class Claim(_Model):
+    text: str
+    cites: list[str] = Field(default_factory=list)
+    numbers: list[NumericClaim] = Field(default_factory=list)
+    kind: Literal["finding", "recommendation", "context"] = "finding"
+
+
+class GroundingIssue(_Model):
+    claim: int  # index into claims (-1 = summary)
+    code: Literal["unknown_id", "uncited", "numeric_mismatch", "unknown_number_ref"]
+    detail: str
+
+
+class GroundingResult(_Model):
+    passed: bool
+    grounded_ratio: float
+    issues: list[GroundingIssue] = Field(default_factory=list)
+
+
+class Explanations(_Model):
+    system: GlobalExplanation | None = None
+    fix_plan: list[WhatIf] = Field(default_factory=list)  # minimal fix set(s)
+    what_if: list[WhatIf] = Field(default_factory=list)  # per single fix
+    fixes: list[Fix] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- AI assessment
+class AIEvidenceRef(_Model):
+    ref: str  # threat id, CVE id, package purl, service id, chain id or finding id
+    kind: str
+    note: str | None = None
+
+
+class AICounterfactual(_Model):
+    condition: str
+    effect: str
+
+
+class AIFinding(_Model):
+    threat_id: str | None = None
+    title: str
+    priority: str  # P1 | P2 | P3 | P4
+    agrees_with_scanner: bool = True
+    evidence: list[AIEvidenceRef] = Field(default_factory=list)
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    counterfactuals: list[AICounterfactual] = Field(default_factory=list)
+
+
+class AIRemediationStep(_Model):
+    title: str
+    commands: list[str] = Field(default_factory=list)  # suggestions only, never executed
+    fixes: list[str] = Field(default_factory=list)  # Threat ids
+    evidence: list[AIEvidenceRef] = Field(default_factory=list)
+    rationale: str
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class AIAssessment(_Model):
+    """Grounded, machine-checked AI analysis attached to a report."""
+
+    provider: str
+    model: str
+    agents: list[str] = Field(default_factory=list)
+    generated: datetime
+    input_sha256: str  # hash of the canonical report the agents saw
+    audience: Literal["executive", "technical"] = "technical"
+    executive_summary: str
+    findings: list[AIFinding] = Field(default_factory=list)
+    remediation_plan: list[AIRemediationStep] = Field(default_factory=list)
+    claims: list[Claim] = Field(default_factory=list)
+    caveats: list[str] = Field(default_factory=list)
+    grounding: GroundingResult
+    usage: dict[str, float] = Field(default_factory=dict)  # requests, tokens, est_cost_usd
+    disclaimer: str = (
+        "AI-generated analysis over the deterministic findings; every statement cites "
+        "report ids and was machine-checked against them."
+    )
+
+
 # --------------------------------------------------------------------------- report
 class TargetInfo(_Model):
     kind: str  # dir | host | tar | docker-archive | oci-dir | oci-archive | container
@@ -663,6 +886,10 @@ class Report(_Model):
     attack_chains: list[AttackChain] = Field(default_factory=list)
     supply_chain: SupplyChain = Field(default_factory=SupplyChain)
     intel: list[IntelBundle] = Field(default_factory=list)
+    evidence: list[Evidence] = Field(default_factory=list)
+    derivations: list[Derivation] = Field(default_factory=list)
+    explanations: Explanations | None = None
+    ai: AIAssessment | None = None
     warnings: list[str] = Field(default_factory=list)
 
     def package_by_id(self) -> dict[str, Package]:
