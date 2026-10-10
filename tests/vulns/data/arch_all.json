@@ -1,0 +1,105 @@
+[
+ {
+  "name": "AVG-2833",
+  "packages": [
+   "lib32-glibc",
+   "glibc"
+  ],
+  "status": "Fixed",
+  "severity": "Unknown",
+  "type": "unknown",
+  "affected": "2.37-1",
+  "fixed": "2.37-2",
+  "ticket": null,
+  "issues": [
+   "CVE-2023-25139"
+  ],
+  "advisories": []
+ },
+ {
+  "name": "AVG-2855",
+  "packages": [
+   "openssh"
+  ],
+  "status": "Fixed",
+  "severity": "High",
+  "type": "authentication bypass",
+  "affected": "9.7p1-2",
+  "fixed": "9.8p1-1",
+  "ticket": null,
+  "issues": [
+   "CVE-2024-6387"
+  ],
+  "advisories": [
+   "ASA-202407-1"
+  ]
+ },
+ {
+  "name": "AVG-1621",
+  "packages": [
+   "glibc"
+  ],
+  "status": "Fixed",
+  "severity": "High",
+  "type": "multiple issues",
+  "affected": "2.33-5",
+  "fixed": "2.34-1",
+  "ticket": null,
+  "issues": [
+   "CVE-2021-43396",
+   "CVE-2021-3999",
+   "CVE-2021-3998",
+   "CVE-2021-35942",
+   "CVE-2021-33574",
+   "CVE-2021-27645"
+  ],
+  "advisories": []
+ },
+ {
+  "name": "AVG-1324",
+  "packages": [
+   "lib32-glibc",
+   "glibc"
+  ],
+  "status": "Not affected",
+  "severity": "Medium",
+  "type": "arbitrary code execution",
+  "affected": "2.32-5",
+  "fixed": null,
+  "ticket": null,
+  "issues": [
+   "CVE-2020-29573"
+  ],
+  "advisories": []
+ },
+ {
+  "name": "AVG-9999",
+  "packages": [
+   "sudo"
+  ],
+  "status": "Vulnerable",
+  "severity": "High",
+  "type": "privilege escalation",
+  "affected": "1.9.15p5-1",
+  "fixed": null,
+  "ticket": null,
+  "issues": [
+   "CVE-2099-0001"
+  ],
+  "advisories": []
+ },
+ {
+  "name": "AVG-9998",
+  "packages": [
+   "zlib"
+  ],
+  "status": "Unknown",
+  "severity": "Unknown",
+  "type": "unknown",
+  "affected": "1:1.3-1",
+  "fixed": null,
+  "ticket": null,
+  "issues": [],
+  "advisories": []
+ }
+]

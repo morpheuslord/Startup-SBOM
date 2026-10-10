@@ -1,0 +1,106 @@
+{
+ "affected": [
+  {
+   "database_specific": {
+    "source": "https://ftp.suse.com/pub/projects/security/osv/SUSE-SU-2024:3106-1.json"
+   },
+   "ecosystem_specific": {
+    "binaries": [
+     {
+      "libopenssl-3-devel": "3.1.4-150600.5.15.1",
+      "libopenssl-3-fips-provider": "3.1.4-150600.5.15.1",
+      "libopenssl-3-fips-provider-32bit": "3.1.4-150600.5.15.1",
+      "libopenssl3": "3.1.4-150600.5.15.1",
+      "libopenssl3-32bit": "3.1.4-150600.5.15.1",
+      "openssl-3": "3.1.4-150600.5.15.1"
+     }
+    ]
+   },
+   "package": {
+    "ecosystem": "SUSE:Linux Enterprise Module for Basesystem 15 SP6",
+    "name": "openssl-3",
+    "purl": "pkg:rpm/suse/openssl-3&distro=SUSE%20Linux%20Enterprise%20Module%20for%20Basesystem%2015%20SP6"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "3.1.4-150600.5.15.1"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  },
+  {
+   "database_specific": {
+    "source": "https://ftp.suse.com/pub/projects/security/osv/SUSE-SU-2024:3106-1.json"
+   },
+   "ecosystem_specific": {
+    "binaries": [
+     {
+      "libopenssl-3-devel": "3.1.4-150600.5.15.1",
+      "libopenssl-3-devel-32bit": "3.1.4-150600.5.15.1",
+      "libopenssl-3-fips-provider": "3.1.4-150600.5.15.1",
+      "libopenssl-3-fips-provider-32bit": "3.1.4-150600.5.15.1",
+      "libopenssl3": "3.1.4-150600.5.15.1",
+      "libopenssl3-32bit": "3.1.4-150600.5.15.1",
+      "openssl-3": "3.1.4-150600.5.15.1",
+      "openssl-3-doc": "3.1.4-150600.5.15.1"
+     }
+    ]
+   },
+   "package": {
+    "ecosystem": "openSUSE:Leap 15.6",
+    "name": "openssl-3",
+    "purl": "pkg:rpm/opensuse/openssl-3&distro=openSUSE%20Leap%2015.6"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "3.1.4-150600.5.15.1"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  }
+ ],
+ "details": "This update for openssl-3 fixes the following issues:\n\n- CVE-2024-6119: Fixed denial of service in X.509 name checks (bsc#1229465)\n\nOther fixes:    \n    \n- FIPS: Deny SHA-1 signature verification in FIPS provider (bsc#1221365).\n- FIPS: RSA keygen PCT requirements.\n- FIPS: Check that the fips provider is available before setting\n  it as the default provider in FIPS mode (bsc#1220523).\n- FIPS: Port ",
+ "id": "SUSE-SU-2024:3106-1",
+ "modified": "2026-02-04T03:33:21.350Z",
+ "published": "2024-09-03T15:00:41Z",
+ "references": [
+  {
+   "type": "ADVISORY",
+   "url": "https://www.suse.com/support/update/announcement/2024/suse-su-20243106-1/"
+  },
+  {
+   "type": "REPORT",
+   "url": "https://bugzilla.suse.com/1220523"
+  },
+  {
+   "type": "REPORT",
+   "url": "https://bugzilla.suse.com/1220690"
+  },
+  {
+   "type": "REPORT",
+   "url": "https://bugzilla.suse.com/1220693"
+  }
+ ],
+ "related": [
+  "CVE-2024-6119"
+ ],
+ "schema_version": "1.7.3",
+ "summary": "Security update for openssl-3",
+ "upstream": [
+  "CVE-2024-6119"
+ ]
+}

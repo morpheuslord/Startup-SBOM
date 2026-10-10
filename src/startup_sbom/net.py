@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -78,19 +79,21 @@ class HttpClient:
         self._client: httpx.Client | None = None
         self._timeout = httpx.Timeout(timeout, connect=min(timeout, 10.0))
         self._transport = transport
+        self._lock = threading.Lock()
 
     # -- plumbing -------------------------------------------------------------
     @property
     def client(self) -> httpx.Client:
-        if self._client is None:
-            self._client = httpx.Client(
-                timeout=self._timeout,
-                follow_redirects=False,
-                verify=True,
-                headers={"User-Agent": f"startup-sbom/{__version__}"},
-                transport=self._transport,
-            )
-        return self._client
+        with self._lock:
+            if self._client is None:
+                self._client = httpx.Client(
+                    timeout=self._timeout,
+                    follow_redirects=False,
+                    verify=True,
+                    headers={"User-Agent": f"startup-sbom/{__version__}"},
+                    transport=self._transport,
+                )
+            return self._client
 
     def close(self) -> None:
         if self._client is not None:
@@ -217,18 +220,16 @@ class HttpClient:
         if resp.status_code == 304 and cached is not None:
             self._touch_cache(key, cached[1])
             return Response(200, cached[0], from_cache=True)
-        if resp.status_code >= 400:
+        if not 200 <= resp.status_code < 300:
             raise NetworkError(f"HTTP {resp.status_code} from {urlsplit(url).hostname}")
         if ttl is not None:
             self._write_cache(key, resp.content, resp.headers)
         return Response(resp.status_code, resp.content)
 
-    def post_json(
-        self, url: str, body: Any, *, headers: dict[str, str] | None = None
-    ) -> Response:
+    def post_json(self, url: str, body: Any, *, headers: dict[str, str] | None = None) -> Response:
         """POST a JSON body (never cached)."""
         resp = self._send("POST", url, json_body=body, headers=headers)
-        if resp.status_code >= 400:
+        if not 200 <= resp.status_code < 300:
             raise NetworkError(f"HTTP {resp.status_code} from {urlsplit(url).hostname}")
         return Response(resp.status_code, resp.content)
 
