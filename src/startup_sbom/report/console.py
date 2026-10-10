@@ -13,7 +13,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from startup_sbom.models import AttackChain, Report, Severity, SSVCDecision
+from startup_sbom.models import AttackChain, Report, Severity, SSVCDecision, Threat
 from startup_sbom.report.graphs import one_line
 from startup_sbom.report.native import (
     canonical,
@@ -30,6 +30,8 @@ from startup_sbom.report.native import (
 TOP_THREATS = 15
 TOP_CHAINS = 8
 TOP_BLAST = 10
+TOP_DIAGRAMS = 3
+TOP_WHY = 3
 
 SEVERITY_STYLE = {
     Severity.CRITICAL: "bold white on red",
@@ -302,17 +304,52 @@ def _packages(r: Report) -> Table:
     return table
 
 
+def _charts(r: Report) -> Group:
+    """Severity and SSVC distribution bars for the report header."""
+    from startup_sbom.viz.terminal import severity_bars, ssvc_bars
+
+    return Group(severity_bars(r), ssvc_bars(r))
+
+
+def _why_threat(r: Report, threat: Threat) -> Group | None:
+    """ "Why this score" waterfall plus the SSVC decision path for one threat."""
+    from rich.console import RenderableType
+
+    from startup_sbom.viz.terminal import risk_waterfall, ssvc_trace_tree
+
+    parts: list[RenderableType] = []
+    if threat.explanation is not None:
+        parts.append(risk_waterfall(threat.explanation))
+    if threat.ssvc is not None and threat.ssvc.trace is not None:
+        parts.append(ssvc_trace_tree(threat.ssvc.trace))
+    return Group(*parts) if parts else None
+
+
 def print_console(report: Report, console: Console, *, verbose: bool = False) -> None:
     """Print a polished terminal summary of ``report`` to ``console``."""
+    from startup_sbom.viz.terminal import (
+        attack_chain_diagram,
+        fix_plan_table,
+        risk_drivers,
+    )
+
     r = canonical(report)
     console.print(_header(r))
+    if r.vulnerabilities or r.threats:
+        console.print(_charts(r))
     if (svc := _services(r)) is not None:
         console.print(svc)
     if (thr := _threats(r, None if verbose else TOP_THREATS)) is not None:
         console.print(thr)
+    if verbose:
+        for th in sorted(r.threats, key=threat_sort_key)[:TOP_WHY]:
+            if (why := _why_threat(r, th)) is not None:
+                console.print(why)
     if r.attack_chains:
         console.print(Text("Attack chains", style="bold"))
         chains = sorted(r.attack_chains, key=lambda c: (-c.score, c.id))
+        for chain in chains[:TOP_DIAGRAMS]:
+            console.print(attack_chain_diagram(chain))
         for chain in chains if verbose else chains[:TOP_CHAINS]:
             console.print(_chain_tree(r, chain))
         if not verbose and len(chains) > TOP_CHAINS:
@@ -321,6 +358,10 @@ def print_console(report: Report, console: Console, *, verbose: bool = False) ->
             )
     for table in _supply(r, verbose):
         console.print(table)
+    if r.explanations is not None and r.explanations.system is not None:
+        console.print(risk_drivers(r))
+    if r.explanations is not None and (r.explanations.fix_plan or r.explanations.what_if):
+        console.print(fix_plan_table(r))
     if verbose:
         console.print(_packages(r))
         for th in sorted(r.threats, key=threat_sort_key):

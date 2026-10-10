@@ -17,7 +17,7 @@ from collections.abc import Iterable, Sequence
 from html import escape
 from importlib import resources
 
-from startup_sbom.models import Report, Severity, SSVCDecision
+from startup_sbom.models import Report, Severity, SSVCDecision, Threat
 from startup_sbom.report.graphs import graph_json
 from startup_sbom.report.native import (
     RenderOptions,
@@ -123,6 +123,113 @@ def _eol_badge(report: Report) -> str:
     return f'<span class="badge eol-no">supported{until}</span>'
 
 
+def _top_explained_threats(r: Report, n: int = 3) -> list[Threat]:
+    return [t for t in sorted(r.threats, key=threat_sort_key) if t.explanation is not None][:n]
+
+
+def _explanations_section(r: Report) -> str:
+    """The Explanations section: system drivers, fix plans and per-threat waterfalls."""
+    from startup_sbom.viz.svg import drivers_chart_svg, waterfall_svg
+
+    ex = r.explanations
+    parts = ['<section id="explain"><h2>Explanations</h2>']
+    if ex is not None and ex.system is not None:
+        g = ex.system
+        parts.append(
+            f"<p>System risk <strong>{g.system_risk:.1f}</strong>/100 "
+            f"(noisy-OR over attack chains and un-chained threats). "
+            f"Formula: <code>{e(g.formula)}</code></p>"
+        )
+        parts.append(f'<div class="chart">{drivers_chart_svg(r)}</div>')
+        parts.append("<h3>Risk drivers</h3>")
+        parts.append(
+            table(
+                ["Kind", "Driver", "Points", "Share", "Cumulative"],
+                [
+                    [
+                        e(d.kind),
+                        e(d.label),
+                        (f"{d.contribution:.1f}", f"{d.contribution:.4f}"),
+                        (f"{d.share:.0%}", f"{d.share:.4f}"),
+                        (f"{d.cumulative:.0%}", f"{d.cumulative:.4f}"),
+                    ]
+                    for d in g.drivers
+                    if d.kind in ("package", "vendor")
+                ],
+            )
+        )
+    actions = {f.id: f.action for f in ex.fixes} if ex is not None else {}
+    if ex is not None and ex.fix_plan:
+        parts.append("<h3>Minimal fix plan</h3>")
+        parts.append(
+            table(
+                ["Method", "Fixes", "Chains broken", "Risk before", "Risk after"],
+                [
+                    [
+                        e(w.method),
+                        e("; ".join(actions.get(i, i) for i in w.fixes)),
+                        e(", ".join(w.chains_broken) or "-"),
+                        (f"{w.risk_before:.1f}", f"{w.risk_before:.2f}"),
+                        (f"{w.risk_after:.1f}", f"{w.risk_after:.2f}"),
+                    ]
+                    for w in ex.fix_plan
+                ],
+                sortable=False,
+            )
+        )
+    if ex is not None and ex.what_if:
+        parts.append("<h3>What if? (single fixes)</h3>")
+        parts.append(
+            table(
+                ["Fix", "Chains broken", "Threats resolved", "Risk before", "Risk after"],
+                [
+                    [
+                        e("; ".join(actions.get(i, i) for i in w.fixes)),
+                        e(", ".join(w.chains_broken) or "-"),
+                        (str(len(w.threats_resolved)), str(len(w.threats_resolved))),
+                        (f"{w.risk_before:.1f}", f"{w.risk_before:.2f}"),
+                        (f"{w.risk_after:.1f}", f"{w.risk_after:.2f}"),
+                    ]
+                    for w in ex.what_if
+                ],
+            )
+        )
+    whys = _top_explained_threats(r)
+    if whys:
+        parts.append("<h3>Why these scores</h3>")
+    for t in whys:
+        expl = t.explanation
+        if expl is None:  # pragma: no cover - whys is filtered on explanation above
+            continue
+        parts.append(
+            f'<details class="chain" open><summary>{e(t.id)}: {e(t.vulnerability)} · '
+            f"risk {t.risk_score:.1f}</summary>"
+            f'<div class="chart">{waterfall_svg(expl)}</div>'
+        )
+        if t.ssvc is not None and t.ssvc.trace is not None:
+            tr = t.ssvc.trace
+            path = " · ".join(
+                f"{e(n.decision_point.split(' v')[0])}: {e(n.value)}" for n in tr.path
+            )
+            parts.append(
+                f'<p class="small">SSVC {e(tr.tree)} → <strong>{e(tr.outcome)}</strong> '
+                f"(row {tr.row}): {path}</p>"
+            )
+            if tr.flips:
+                flips = "".join(f"<li>{e(x)}</li>" for x in tr.flips)
+                parts.append(f'<ul class="plain small">{flips}</ul>')
+        if expl.limits:
+            lims = "".join(f"<li>{e(x)}</li>" for x in expl.limits)
+            parts.append(
+                f'<p class="small">Knowledge limits:</p><ul class="plain small">{lims}</ul>'
+            )
+        parts.append("</details>")
+    if len(parts) == 1:
+        parts.append("<p>No explanation data (run the scan with explanations enabled).</p>")
+    parts.append("</section>")
+    return "".join(parts)
+
+
 def render_html(report: Report, options: RenderOptions) -> str:
     """Render the self-contained HTML report."""
     del options
@@ -146,6 +253,7 @@ def render_html(report: Report, options: RenderOptions) -> str:
     nav = [
         ("summary", "Summary"),
         ("threats", "Threats"),
+        ("explain", "Explanations"),
         ("graph", "Attack graph"),
         ("chains", "Attack chains"),
         ("supply", "Supply chain"),
@@ -190,10 +298,20 @@ def render_html(report: Report, options: RenderOptions) -> str:
             ["User", e(c.user or "root (default)")],
             ["Exposed ports", e(", ".join(c.exposed_ports) or "-")],
         ]
+    from startup_sbom.viz.svg import attack_graph_svg, severity_chart_svg, ssvc_chart_svg
+
+    charts = ""
+    if r.vulnerabilities or r.threats:
+        charts = (
+            f'<div class="charts"><div class="chart">{severity_chart_svg(r)}</div>'
+            f'<div class="chart">{ssvc_chart_svg(r)}</div></div>'
+        )
     body.append(
         '<section id="summary"><h2>Summary</h2><div class="cards">'
         + "".join(cards)
-        + "</div><h3>System</h3>"
+        + "</div>"
+        + charts
+        + "<h3>System</h3>"
         + table(["Field", "Value"], sys_rows, sortable=False)
         + "</section>"
     )
@@ -238,15 +356,19 @@ def render_html(report: Report, options: RenderOptions) -> str:
         + "</section>"
     )
 
+    # ------------------------------------------------------------- explanations
+    body.append(_explanations_section(r))
+
     # ------------------------------------------------------------- graph
+    static_graph = attack_graph_svg(r) if r.attack_chains else ""
     body.append(
         '<section id="graph"><h2>Attack graph and blast radius</h2>'
         '<div class="tabs"><button type="button" data-view="attack" aria-pressed="true">'
         'Attack graph</button><button type="button" data-view="supply" aria-pressed="false">'
         "Supply-chain blast radius</button></div>"
         '<div class="graph-wrap"><div class="graph-box" id="graph-box">'
-        '<noscript><p class="small">Enable JavaScript for the interactive graph; the attack chains '
-        "are listed below.</p></noscript></div>"
+        '<noscript><p class="small">Enable JavaScript for the interactive graph; a static view '
+        f"follows and the attack chains are listed below.</p>{static_graph}</noscript></div>"
         '<aside class="graph-detail" id="graph-detail" aria-live="polite"></aside></div></section>'
     )
 

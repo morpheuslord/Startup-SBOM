@@ -1,4 +1,9 @@
-"""Format registry, rendering entry point and atomic report writing."""
+"""Format registry, rendering entry points and atomic report writing.
+
+Text formats render to ``str``; binary formats (PDF) set
+:attr:`FormatSpec.render_bytes` and are only available through
+:func:`render_bytes`, which also encodes every text format as UTF-8.
+"""
 
 from __future__ import annotations
 
@@ -24,14 +29,41 @@ from startup_sbom.report.spdx import render_spdx
 FILE_MODE = 0o644
 
 
+TextRenderer = Callable[[Report, RenderOptions], str]
+BytesRenderer = Callable[[Report, RenderOptions], bytes]
+
+
 @dataclass(frozen=True, slots=True)
 class FormatSpec:
-    """An output format: its name, default file name and renderer."""
+    """An output format: its name, default file name and renderer(s).
+
+    ``render_bytes`` is set for binary formats; their ``render`` raises
+    :class:`~startup_sbom.errors.OutputError` because the text API cannot carry them.
+    """
 
     name: str
     default_filename: str
-    render: Callable[[Report, RenderOptions], str]
+    render: TextRenderer
     description: str = ""
+    render_bytes: BytesRenderer | None = None
+
+    @property
+    def binary(self) -> bool:
+        """Whether this format produces bytes rather than text."""
+        return self.render_bytes is not None
+
+
+def _text_unavailable(fmt: str) -> TextRenderer:
+    def render_text(report: Report, options: RenderOptions) -> str:
+        raise OutputError(f"{fmt!r} is a binary format; use render_bytes() or write_reports()")
+
+    return render_text
+
+
+def _render_pdf(report: Report, options: RenderOptions) -> bytes:
+    from startup_sbom.report.pdf import render_pdf  # lazy: the engine is an optional extra
+
+    return render_pdf(report, options)
 
 
 FORMATS: dict[str, FormatSpec] = {
@@ -47,20 +79,46 @@ FORMATS: dict[str, FormatSpec] = {
         FormatSpec("html", "report.html", render_html, "self-contained HTML report"),
         FormatSpec("dot", "attack-graph.dot", render_dot, "Graphviz attack graph"),
         FormatSpec("mermaid", "attack-graph.mmd", render_mermaid, "Mermaid attack graph"),
+        FormatSpec(
+            "pdf",
+            "report.pdf",
+            _text_unavailable("pdf"),
+            "PDF report (optional extra: startup-sbom[pdf])",
+            render_bytes=_render_pdf,
+        ),
     )
 }
 
 
-def render(report: Report, fmt: str, options: RenderOptions | None = None) -> str:
-    """Render ``report`` in format ``fmt`` (a key of :data:`FORMATS`)."""
+def _spec(fmt: str) -> FormatSpec:
     spec = FORMATS.get(fmt)
     if spec is None:
         raise OutputError(f"unknown output format {fmt!r} (choose from {', '.join(FORMATS)})")
+    return spec
+
+
+def render(report: Report, fmt: str, options: RenderOptions | None = None) -> str:
+    """Render ``report`` in text format ``fmt`` (a key of :data:`FORMATS`).
+
+    Binary formats raise :class:`OutputError`; use :func:`render_bytes` for them.
+    """
+    spec = _spec(fmt)
+    if spec.binary:
+        raise OutputError(f"{fmt!r} is a binary format; use render_bytes() or write_reports()")
     return spec.render(report, options or RenderOptions())
 
 
-def atomic_write(path: pathlib.Path, data: str) -> pathlib.Path:
-    """Atomically replace ``path`` with ``data`` (UTF-8, mode 0644).
+def render_bytes(report: Report, fmt: str, options: RenderOptions | None = None) -> bytes:
+    """Render ``report`` in any format as bytes (text formats are UTF-8 encoded)."""
+    spec = _spec(fmt)
+    opts = options or RenderOptions()
+    if spec.render_bytes is not None:
+        return spec.render_bytes(report, opts)
+    return spec.render(report, opts).encode("utf-8")
+
+
+def atomic_write(path: pathlib.Path, data: str | bytes) -> pathlib.Path:
+    """Atomically replace ``path`` with ``data`` (``str`` is UTF-8 encoded; mode 0644).
 
     The parent directory is created.  A symlink (or non-regular file) at the
     destination is refused; the temporary file lives in the same directory so the
@@ -82,7 +140,7 @@ def atomic_write(path: pathlib.Path, data: str) -> pathlib.Path:
         raise OutputError(f"cannot write {path}: {exc}") from exc
     try:
         with os.fdopen(fd, "wb") as fh:
-            fh.write(data.encode("utf-8"))
+            fh.write(data.encode("utf-8") if isinstance(data, str) else data)
             fh.flush()
             os.fsync(fh.fileno())
         os.chmod(tmp, FILE_MODE)
@@ -119,5 +177,7 @@ def write_reports(
         if key in seen:
             raise OutputError(f"formats {seen[key]!r} and {fmt!r} both write to {dest}")
         seen[key] = fmt
-    rendered = [(pathlib.Path(dest), render(report, fmt, opts)) for fmt, dest in outputs.items()]
-    return [atomic_write(dest, text) for dest, text in rendered]
+    rendered = [
+        (pathlib.Path(dest), render_bytes(report, fmt, opts)) for fmt, dest in outputs.items()
+    ]
+    return [atomic_write(dest, data) for dest, data in rendered]

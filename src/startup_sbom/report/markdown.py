@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from startup_sbom.models import Report, Severity
+from startup_sbom.models import Report, Severity, Threat
 from startup_sbom.report.graphs import mermaid_chain, one_line
 from startup_sbom.report.native import (
     RenderOptions,
@@ -27,6 +27,7 @@ from startup_sbom.report.native import (
 )
 
 TOP_THREATS = 25
+TOP_FACTOR_TABLES = 3
 MAX_VULN_ROWS = 300
 _ESCAPES = str.maketrans(
     {
@@ -74,6 +75,127 @@ def _eol(report: Report) -> str:
     if eol.eol_date:
         return f"supported until {md(eol.eol_date)}"
     return "supported"
+
+
+def _factor_value(value: float | str | bool | None) -> str:
+    if value is None:
+        return "-"
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, float):
+        return f"{value:g}"
+    return md(str(value), 40)
+
+
+def _why_sections(threats: list[Threat]) -> list[str]:
+    """Per-threat factor tables and SSVC decision paths (top explained threats)."""
+    out: list[str] = []
+    explained = [t for t in threats if t.explanation is not None][:TOP_FACTOR_TABLES]
+    if not explained:
+        return out
+    out += ["## Why these scores", ""]
+    for t in explained:
+        expl = t.explanation
+        if expl is None:  # pragma: no cover - filtered above
+            continue
+        out += [
+            f"### {md(t.id)}: {md(t.vulnerability)} scores {t.risk_score:.1f}",
+            "",
+            f"`{md(expl.formula, 120)}` · method {md(expl.method.value)} · "
+            f"baseline {expl.baseline:g} + contributions = **{expl.total:.1f}**",
+            "",
+            *table(
+                ["Factor", "Value", "Multiplier", "Contribution"],
+                [
+                    [
+                        md(f.label, 60),
+                        _factor_value(f.value),
+                        "-" if f.multiplier is None else f"x{f.multiplier:.2f}",
+                        f"{f.contribution:+.1f}",
+                    ]
+                    for f in expl.factors
+                ],
+            ),
+            "",
+        ]
+        if t.ssvc is not None and t.ssvc.trace is not None:
+            tr = t.ssvc.trace
+            path = " → ".join(
+                f"{md(n.decision_point.split(' v')[0])}: **{md(n.value)}**" for n in tr.path
+            )
+            out += [f"SSVC {md(tr.tree)} (row {tr.row}): {path} ⇒ **{md(tr.outcome)}**", ""]
+            if tr.flips:
+                out += ["Would change if:", "", *[f"- {md(x, 160)}" for x in tr.flips], ""]
+        if expl.limits:
+            out += ["Knowledge limits:", "", *[f"- {md(x, 300)}" for x in expl.limits], ""]
+    return out
+
+
+def _explanations_sections(r: Report) -> list[str]:
+    """System-risk drivers and the minimal fix plan."""
+    ex = r.explanations
+    if ex is None or (ex.system is None and not ex.fix_plan and not ex.what_if):
+        return []
+    out: list[str] = ["## System risk and fix plan", ""]
+    if ex.system is not None:
+        g = ex.system
+        out += [
+            f"System risk **{g.system_risk:.1f}**/100 — `{md(g.formula, 140)}`",
+            "",
+            *table(
+                ["Kind", "Driver", "Points", "Share", "Cumulative"],
+                [
+                    [
+                        md(d.kind),
+                        md(d.label, 60),
+                        f"{d.contribution:.1f}",
+                        f"{d.share:.0%}",
+                        f"{d.cumulative:.0%}",
+                    ]
+                    for d in g.drivers
+                    if d.kind in ("package", "vendor")
+                ],
+            ),
+            "",
+        ]
+    actions = {f.id: f.action for f in ex.fixes}
+    if ex.fix_plan:
+        out += [
+            "### Minimal fix plan",
+            "",
+            *table(
+                ["Method", "Fixes", "Chains broken", "System risk"],
+                [
+                    [
+                        md(w.method),
+                        md("; ".join(actions.get(i, i) for i in w.fixes), 300),
+                        md(", ".join(w.chains_broken) or "-", 200),
+                        f"{w.risk_before:.1f} → {w.risk_after:.1f}",
+                    ]
+                    for w in ex.fix_plan
+                ],
+            ),
+            "",
+        ]
+    if ex.what_if:
+        out += [
+            "### What if? (single fixes)",
+            "",
+            *table(
+                ["Fix", "Chains broken", "Threats resolved", "System risk"],
+                [
+                    [
+                        md("; ".join(actions.get(i, i) for i in w.fixes), 200),
+                        md(", ".join(w.chains_broken) or "-", 160),
+                        str(len(w.threats_resolved)),
+                        f"{w.risk_before:.1f} → {w.risk_after:.1f}",
+                    ]
+                    for w in ex.what_if
+                ],
+            ),
+            "",
+        ]
+    return out
 
 
 def render_markdown(report: Report, options: RenderOptions) -> str:
@@ -189,6 +311,8 @@ def render_markdown(report: Report, options: RenderOptions) -> str:
     else:
         out.append("No threats were derived.")
     out.append("")
+    out += _why_sections(threats)
+    out += _explanations_sections(r)
 
     # ------------------------------------------------------------- attack chains
     out += ["## Attack chains", ""]

@@ -53,7 +53,9 @@ def _shuffled(report: Report) -> Report:
 
 
 def test_registry() -> None:
-    assert {k: v.default_filename for k, v in FORMATS.items()} == EXPECTED
+    binary = {"pdf": "report.pdf"}  # bytes-only formats (see test_pdf.py)
+    assert {k: v.default_filename for k, v in FORMATS.items()} == {**EXPECTED, **binary}
+    assert {k for k, v in FORMATS.items() if v.binary} == set(binary)
     for name, spec in FORMATS.items():
         assert spec.name == name
         assert callable(spec.render)
@@ -144,7 +146,7 @@ def test_write_refuses_directory_and_bad_input(report: Report, tmp_path: Path) -
     with pytest.raises(OutputError):
         write_reports(report, {"json": tmp_path / "dir"})
     with pytest.raises(OutputError, match="unknown"):
-        write_reports(report, {"pdf": tmp_path / "x.pdf"})
+        write_reports(report, {"xml": tmp_path / "x.xml"})
     with pytest.raises(OutputError, match="both write"):
         write_reports(report, {"json": tmp_path / "a", "markdown": tmp_path / "a"})
     assert not (tmp_path / "a").exists()  # validation happens before any write
