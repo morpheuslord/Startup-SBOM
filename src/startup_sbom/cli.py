@@ -54,6 +54,7 @@ class Format(StrEnum):
     html = "html"
     dot = "dot"
     mermaid = "mermaid"
+    pdf = "pdf"
 
 
 class FailOn(StrEnum):
@@ -131,6 +132,26 @@ def scan(
             dir_okay=False,
         ),
     ] = None,
+    prefetch_intel: Annotated[
+        bool,
+        typer.Option(
+            "--prefetch-intel",
+            help="Fetch advisories, exploit availability and write-ups for top findings.",
+        ),
+    ] = False,
+    intel_max_cves: Annotated[
+        int, typer.Option("--intel-max-cves", min=1, max=500, help="CVEs to prefetch.")
+    ] = 25,
+    intel_max_articles: Annotated[
+        int, typer.Option("--intel-max-articles", min=0, max=20, help="Articles per CVE.")
+    ] = 4,
+    intel_budget: Annotated[
+        float, typer.Option("--intel-budget", min=10.0, help="Prefetch time budget (seconds).")
+    ] = 120.0,
+    no_intel_articles: Annotated[
+        bool,
+        typer.Option("--no-intel-articles", help="Structured intel sources only, no articles."),
+    ] = False,
     cdx_spec: Annotated[
         CdxSpec, typer.Option("--cdx-spec", help="CycloneDX spec version.")
     ] = CdxSpec.v16,
@@ -180,7 +201,17 @@ def scan(
         platform=platform,
         boot_timing_file=boot_timing,
         vex_not_affected_unreachable=vex_unreachable_not_affected,
+        prefetch_intel=prefetch_intel,
+        intel_max_cves=intel_max_cves,
+        intel_max_articles=intel_max_articles,
+        intel_budget=intel_budget,
+        intel_articles=not no_intel_articles,
     )
+    missing = [f.value for f in chosen if f.value not in _available_formats()]
+    if missing:
+        raise typer.BadParameter(
+            f"format(s) not available in this installation: {', '.join(missing)}"
+        )
     err = Console(stderr=True)
     show_progress = not quiet and err.is_terminal
     if show_progress:
@@ -198,8 +229,14 @@ def scan(
         cdx_spec=cdx_spec.value, vex_not_affected_unreachable=vex_unreachable_not_affected
     )
     if output == "-":
-        sys.stdout.write(render(report, chosen[0].value, render_opts))
-        sys.stdout.flush()
+        if chosen[0] is Format.pdf:
+            from startup_sbom.report import render_bytes
+
+            sys.stdout.buffer.write(render_bytes(report, "pdf", render_opts))
+            sys.stdout.buffer.flush()
+        else:
+            sys.stdout.write(render(report, chosen[0].value, render_opts))
+            sys.stdout.flush()
     else:
         if not quiet:
             print_console(report, Console(), verbose=verbose)
@@ -280,6 +317,51 @@ def schema() -> None:
 def version() -> None:
     """Print the version."""
     typer.echo(f"startup-sbom {__version__}")
+
+
+def _available_formats() -> set[str]:
+    from startup_sbom.report import FORMATS
+
+    return set(FORMATS)
+
+
+@app.command()
+def tui(
+    report: Annotated[
+        Path | None,
+        typer.Option("--report", help="Open an existing report.json instead of scanning."),
+    ] = None,
+    target: Annotated[str | None, typer.Argument(help="Pre-select a scan target.")] = None,
+) -> None:
+    """Interactive terminal UI for scanning and browsing results."""
+    try:
+        from startup_sbom.tui import run as run_tui
+    except ImportError as exc:  # pragma: no cover - optional extra
+        Console(stderr=True).print(
+            "the TUI needs the optional extra: pip install 'startup-sbom[tui]'",
+            markup=False,
+        )
+        raise typer.Exit(EXIT_USAGE) from exc
+    run_tui(report_path=report, target=target)
+
+
+def _mount_optional_apps() -> None:
+    """Attach subsystem CLIs that may still be absent in partial installs."""
+    try:
+        from startup_sbom.intel.cli import app as intel_app
+    except ImportError:  # pragma: no cover
+        pass
+    else:
+        app.add_typer(intel_app, name="intel", help="Look up and cache CVE intelligence.")
+    try:
+        from startup_sbom.ai.cli import app as ai_app  # type: ignore[import-not-found]
+    except ImportError:  # pragma: no cover
+        pass
+    else:
+        app.add_typer(ai_app, name="ai", help="AI analysis, MCP and agent servers.")
+
+
+_mount_optional_apps()
 
 
 def main() -> None:

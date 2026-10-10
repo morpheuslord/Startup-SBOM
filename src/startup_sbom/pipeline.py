@@ -47,8 +47,13 @@ ProgressFn = Callable[[ProgressEvent], None]
 
 
 def _stage_count(options: ScanOptions) -> int:
-    optional = (options.language_packages, bool(options.vuln_sources), options.eol)
-    return 7 + sum(optional)
+    optional = (
+        options.language_packages,
+        bool(options.vuln_sources),
+        options.eol,
+        options.prefetch_intel,
+    )
+    return 8 + sum(optional)
 
 
 class _Stages:
@@ -229,10 +234,31 @@ def _run(
     with stages.stage("Reversing vulnerabilities into threats"):
         report.threats = threat.reverse_vulnerabilities(report, ctx)
 
+    if opts.prefetch_intel and report.threats:
+        with stages.stage("Prefetching vulnerability intelligence"):
+            from startup_sbom import intel
+
+            report.intel = intel.prefetch(report, ctx, http)
+            if report.intel:
+                # Re-reverse with intel in hand: public PoC / active exploitation
+                # can only raise SSVC exploitation and risk, never lower them.
+                report.threats = threat.reverse_vulnerabilities(report, ctx)
+
     with stages.stage("Mapping chained attacks"):
         report.attack_chains = threat.build_attack_chains(report, report.threats, ctx)
 
+    with stages.stage("Explaining results"):
+        _explain(report)
+
     _finalize(report)
+
+
+def _explain(report: Report) -> None:
+    try:
+        from startup_sbom.explain import explain_report
+    except ImportError:  # pragma: no cover - module still landing
+        return
+    explain_report(report)
 
 
 def _attach_boot_timing(ctx: ScanContext, services: list[Service], live_host: bool) -> None:
