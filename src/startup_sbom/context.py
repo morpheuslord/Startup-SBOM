@@ -36,6 +36,12 @@ class ScanOptions:
     # threat semantics
     vex_not_affected_unreachable: bool = False
     max_chains: int = 25
+    # online intel prefetch (opt-in; respects ``offline``)
+    prefetch_intel: bool = False
+    intel_max_cves: int = 25
+    intel_max_articles: int = 4
+    intel_budget: float = 120.0
+    intel_articles: bool = True
 
 
 @dataclass(slots=True)
