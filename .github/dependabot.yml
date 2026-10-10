@@ -1,0 +1,64 @@
+version: 2
+
+# Weekly, grouped updates with a cooldown so freshly published (and possibly
+# compromised) releases are not picked up on day one.
+
+updates:
+  - package-ecosystem: "uv" # pyproject.toml constraints + uv.lock
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      runtime:
+        dependency-type: "production"
+        update-types: ["minor", "patch"]
+      dev-tools:
+        dependency-type: "development"
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions" # .github/workflows/* and the root action.yml
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: "docker" # Dockerfile base images (tag + digest)
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "build"
+    groups:
+      base-images:
+        patterns: ["*"]
+
+  - package-ecosystem: "pre-commit" # .pre-commit-config.yaml revs
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "chore"
+    groups:
+      pre-commit-hooks:
+        patterns: ["*"]

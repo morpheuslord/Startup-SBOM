@@ -1,0 +1,259 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.13.0"
+  FORCE_COLOR: "1"
+  PYTHONUTF8: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: lint (ruff, lockfile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: uv.lock is up to date
+        run: uv lock --check
+      - name: ruff check
+        run: uv run --locked --only-group lint ruff check --output-format=github .
+      - name: ruff format
+        run: uv run --locked --only-group lint ruff format --check --diff .
+
+  typecheck:
+    name: mypy (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked
+      - run: uv run --locked mypy
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        experimental: [false]
+        include:
+          # Python 3.15.0 was released 2026-10-09; allowed to fail until the
+          # whole dependency tree publishes cp315 wheels.
+          - os: ubuntu-latest
+            python-version: "3.15"
+            experimental: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --locked
+      - name: pytest
+        run: uv run --locked pytest -m "not network" --cov --cov-report=term --cov-report=xml
+
+  build:
+    name: build + wheel smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Build sdist and wheel
+        run: uv build --no-sources
+      - name: Install the wheel into a fresh venv and smoke test
+        run: |
+          set -euo pipefail
+          venv="$RUNNER_TEMP/wheel-smoke"
+          uv venv --python 3.11 "$venv"
+          uv pip install --python "$venv/bin/python" dist/*.whl
+          "$venv/bin/startup-sbom" version
+          "$venv/bin/startup-sbom" schema > "$RUNNER_TEMP/schema.json"
+          "$venv/bin/python" -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$RUNNER_TEMP/schema.json"
+          "$venv/bin/python" -m startup_sbom --help > /dev/null
+      - name: Install the sdist into a fresh venv and smoke test
+        run: |
+          set -euo pipefail
+          venv="$RUNNER_TEMP/sdist-smoke"
+          uv venv --python 3.14 "$venv"
+          uv pip install --python "$venv/bin/python" dist/*.tar.gz
+          "$venv/bin/startup-sbom" version
+      - name: Self-SBOM of runtime dependencies (CycloneDX 1.5)
+        run: uv export --frozen --no-dev --format cyclonedx1.5 --output-file startup-sbom-deps.cdx.json > /dev/null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: self-sbom
+          path: startup-sbom-deps.cdx.json
+          if-no-files-found: error
+
+  audit:
+    name: dependency audit (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: uv audit (runtime dependencies)
+        run: uv audit --preview-features audit-command --locked --no-dev
+      - name: uv audit (all groups)
+        run: uv audit --preview-features audit-command --locked
+
+  e2e:
+    name: e2e (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: debian-12-slim, image: "debian:12-slim", scheme: tar }
+          - { name: alpine-3.20, image: "alpine:3.20", scheme: tar }
+          - { name: rockylinux-9-minimal, image: "rockylinux:9-minimal", scheme: tar }
+          - { name: alpine-3.20-docker-save, image: "alpine:3.20", scheme: docker-archive }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --no-dev
+      - name: Produce the image archive
+        env:
+          IMAGE: ${{ matrix.image }}
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          set -euo pipefail
+          docker pull --quiet --platform linux/amd64 "$IMAGE"
+          archive="$RUNNER_TEMP/target.tar"
+          if [ "$SCHEME" = "docker-archive" ]; then
+            docker save -o "$archive" "$IMAGE"
+          else
+            cid="$(docker create --platform linux/amd64 "$IMAGE")"
+            docker export -o "$archive" "$cid"
+            docker rm "$cid" > /dev/null
+          fi
+          ls -l "$archive"
+      - name: Scan offline (json + cyclonedx)
+        env:
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/basic"
+          uv run --locked --no-dev startup-sbom scan "${SCHEME}:$RUNNER_TEMP/target.tar" \
+            --offline -f json -f cyclonedx -o "$out"
+          test -s "$out/report.json"
+          test -s "$out/sbom.cdx.json"
+          jq -e . "$out/report.json" > /dev/null
+          jq -e '.bomFormat == "CycloneDX" and ((.components // []) | length > 0)' "$out/sbom.cdx.json"
+      - name: Scan offline (every output format)
+        env:
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/all"
+          args=()
+          for f in json cyclonedx spdx sarif openvex cdx-vex markdown html dot mermaid; do
+            args+=(-f "$f")
+          done
+          uv run --locked --no-dev startup-sbom scan "${SCHEME}:$RUNNER_TEMP/target.tar" \
+            --offline "${args[@]}" -o "$out"
+          for name in report.json sbom.cdx.json sbom.spdx.json results.sarif vex.openvex.json \
+                      vex.cdx.json report.md report.html attack-graph.dot attack-graph.mmd; do
+            test -s "$out/$name" || { echo "::error::missing or empty $name"; exit 1; }
+          done
+          for name in report.json sbom.cdx.json sbom.spdx.json results.sarif vex.openvex.json vex.cdx.json; do
+            jq -e . "$out/$name" > /dev/null
+          done
+          jq -e '.version == "2.1.0"' "$out/results.sarif"
+      - name: Usage errors exit with code 2
+        run: |
+          set +e
+          uv run --locked --no-dev startup-sbom scan "dir:$RUNNER_TEMP/does-not-exist" --offline -o "$RUNNER_TEMP/out/none"
+          rc=$?
+          set -e
+          echo "exit code: $rc"
+          test "$rc" -eq 2
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-${{ matrix.name }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+
+  action:
+    name: composite action self-test
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Export a small rootfs
+        run: |
+          set -euo pipefail
+          docker pull --quiet alpine:3.20
+          cid="$(docker create alpine:3.20)"
+          docker export -o "$RUNNER_TEMP/alpine.tar" "$cid"
+          docker rm "$cid" > /dev/null
+      - id: scan
+        uses: ./ # zizmor: ignore[self-repository] -- checked-out root action.yml; $/ is not yet understood by actionlint
+        with:
+          target: tar:${{ runner.temp }}/alpine.tar
+          formats: sarif,cyclonedx,json
+          output-dir: ${{ runner.temp }}/action-out
+          offline: "true"
+          upload-sarif: "false"
+      - name: Check action outputs
+        env:
+          SARIF_FILE: ${{ steps.scan.outputs.sarif-file }}
+          SBOM_FILE: ${{ steps.scan.outputs.sbom-file }}
+          REPORT_FILE: ${{ steps.scan.outputs.report-file }}
+          EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        run: |
+          set -euo pipefail
+          test "$EXIT_CODE" = "0"
+          for f in "$SARIF_FILE" "$SBOM_FILE" "$REPORT_FILE"; do
+            test -n "$f" && test -s "$f"
+          done

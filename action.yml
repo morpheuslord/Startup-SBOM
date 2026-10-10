@@ -1,0 +1,214 @@
+name: "Startup-SBOM Scan"
+description: "Root-confined static analysis of a Linux rootfs or container image: boot-time services, SBOM, CVEs, threats and attack chains as SARIF / CycloneDX / SPDX / VEX."
+author: "morpheuslord"
+branding:
+  icon: "shield"
+  color: "blue"
+
+# Usage:
+#
+#   permissions:
+#     contents: read
+#     security-events: write   # only needed when upload-sarif is true
+#   steps:
+#     - uses: morpheuslord/Startup-SBOM@<full-commit-sha> # v2.0.0
+#       with:
+#         target: docker-archive:image.tar
+#         fail-on: high
+#
+# Every input reaches the scanner through environment variables and is passed
+# as discrete argv entries; nothing is interpolated into shell source.
+
+inputs:
+  target:
+    description: "Scan target: dir:PATH, tar:FILE, docker-archive:FILE, oci-dir:DIR, oci-archive:FILE, docker:NAME, podman:NAME, nerdctl:NAME, host:, or an existing path."
+    required: true
+  formats:
+    description: "Comma-separated output formats: json, cyclonedx, spdx, sarif, openvex, cdx-vex, markdown, html, dot, mermaid."
+    required: false
+    default: "sarif,cyclonedx,json"
+  output-dir:
+    description: "Directory the reports are written to."
+    required: false
+    default: "startup-sbom-out"
+  offline:
+    description: "Use only the local vulnerability cache; never open a network connection (true/false)."
+    required: false
+    default: "false"
+  fail-on:
+    description: "Fail the step when a finding reaches this level: none, low, medium, high, critical, attend, act. Reports (and the SARIF upload) are produced first."
+    required: false
+    default: "none"
+  extra-args:
+    description: "Additional scanner flags, split on whitespace (no shell quoting), e.g. \"--no-epss --cdx-spec 1.7\"."
+    required: false
+    default: ""
+  version:
+    description: "startup-sbom version to install from PyPI (e.g. 2.0.0). Empty = run the code at the ref this action was pinned to."
+    required: false
+    default: ""
+  python-version:
+    description: "Python used to run the scanner (uv downloads it if missing)."
+    required: false
+    default: "3.13"
+  upload-sarif:
+    description: "Upload results.sarif to GitHub code scanning (needs `security-events: write`)."
+    required: false
+    default: "true"
+  sarif-category:
+    description: "Code-scanning category for the SARIF upload."
+    required: false
+    default: "startup-sbom"
+  nvd-api-key:
+    description: "Optional NVD API key (only used when the nvd source is enabled via extra-args --sources)."
+    required: false
+    default: ""
+
+outputs:
+  sarif-file:
+    description: "Path to results.sarif (empty if sarif was not requested)."
+    value: ${{ steps.scan.outputs.sarif-file }}
+  sbom-file:
+    description: "Path to sbom.cdx.json (empty if cyclonedx was not requested)."
+    value: ${{ steps.scan.outputs.sbom-file }}
+  report-file:
+    description: "Path to report.json (empty if json was not requested)."
+    value: ${{ steps.scan.outputs.report-file }}
+  output-dir:
+    description: "Directory containing every generated report."
+    value: ${{ steps.scan.outputs.output-dir }}
+  exit-code:
+    description: "Scanner exit code (0 ok, 1 fail-on threshold reached, 2 usage/target error, 3 internal error)."
+    value: ${{ steps.scan.outputs.exit-code }}
+
+runs:
+  using: composite
+  steps:
+    - name: Install uv
+      uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      with:
+        version: "0.13.0"
+        enable-cache: "false"
+
+    - name: Run startup-sbom
+      id: scan
+      shell: bash
+      env:
+        SS_TARGET: ${{ inputs.target }}
+        SS_FORMATS: ${{ inputs.formats }}
+        SS_OUTPUT_DIR: ${{ inputs.output-dir }}
+        SS_OFFLINE: ${{ inputs.offline }}
+        SS_FAIL_ON: ${{ inputs.fail-on }}
+        SS_EXTRA_ARGS: ${{ inputs.extra-args }}
+        SS_VERSION: ${{ inputs.version }}
+        SS_PYTHON: ${{ inputs.python-version }}
+        SS_NVD_API_KEY: ${{ inputs.nvd-api-key }}
+      run: |
+        set -euo pipefail
+        set -f  # no globbing while splitting user-supplied lists
+
+        if [ -z "$SS_TARGET" ]; then
+          echo "::error title=startup-sbom::input 'target' is required"
+          exit 2
+        fi
+
+        if [ -n "$SS_VERSION" ]; then
+          if ! [[ "$SS_VERSION" =~ ^[0-9]+(\.[0-9]+)*((a|b|rc)[0-9]+)?(\.post[0-9]+)?(\.dev[0-9]+)?$ ]]; then
+            echo "::error title=startup-sbom::input 'version' must be a plain version number, got: $SS_VERSION"
+            exit 2
+          fi
+          from="startup-sbom==$SS_VERSION"
+        else
+          from="$GITHUB_ACTION_PATH"
+        fi
+
+        args=(scan --output "$SS_OUTPUT_DIR" --fail-on "$SS_FAIL_ON")
+
+        IFS=',' read -r -a formats <<< "$SS_FORMATS"
+        want_sarif=false want_cdx=false want_json=false
+        for f in "${formats[@]}"; do
+          f="${f//[[:space:]]/}"
+          [ -z "$f" ] && continue
+          if ! [[ "$f" =~ ^[a-z][a-z-]*$ ]]; then
+            echo "::error title=startup-sbom::invalid format: $f"
+            exit 2
+          fi
+          args+=(--format "$f")
+          case "$f" in
+            sarif) want_sarif=true ;;
+            cyclonedx) want_cdx=true ;;
+            json) want_json=true ;;
+          esac
+        done
+
+        case "$SS_OFFLINE" in
+          true|True|TRUE|1|yes) args+=(--offline) ;;
+        esac
+
+        if [ -n "$SS_EXTRA_ARGS" ]; then
+          IFS=$' \t\n' read -r -a extra <<< "$SS_EXTRA_ARGS"
+          args+=("${extra[@]}")
+        fi
+
+        if [ -n "$SS_NVD_API_KEY" ]; then
+          export NVD_API_KEY="$SS_NVD_API_KEY"
+        fi
+
+        mkdir -p "$SS_OUTPUT_DIR"
+        echo "::group::startup-sbom ${args[*]} -- <target>"
+        set +e
+        uvx --python "$SS_PYTHON" --from "$from" startup-sbom "${args[@]}" -- "$SS_TARGET"
+        rc=$?
+        set -e
+        echo "::endgroup::"
+
+        sarif="" sbom="" report=""
+        if $want_sarif && [ -f "$SS_OUTPUT_DIR/results.sarif" ]; then sarif="$SS_OUTPUT_DIR/results.sarif"; fi
+        if $want_cdx && [ -f "$SS_OUTPUT_DIR/sbom.cdx.json" ]; then sbom="$SS_OUTPUT_DIR/sbom.cdx.json"; fi
+        if $want_json && [ -f "$SS_OUTPUT_DIR/report.json" ]; then report="$SS_OUTPUT_DIR/report.json"; fi
+
+        {
+          echo "exit-code=$rc"
+          echo "output-dir=$SS_OUTPUT_DIR"
+          echo "sarif-file=$sarif"
+          echo "sbom-file=$sbom"
+          echo "report-file=$report"
+        } >> "$GITHUB_OUTPUT"
+
+        {
+          echo "### Startup-SBOM"
+          echo
+          echo "| | |"
+          echo "|---|---|"
+          echo "| Exit code | \`$rc\` |"
+          echo "| Output directory | \`$SS_OUTPUT_DIR\` |"
+          [ -n "$sbom" ] && echo "| CycloneDX SBOM | \`$sbom\` |"
+          [ -n "$sarif" ] && echo "| SARIF | \`$sarif\` |"
+          [ -n "$report" ] && echo "| JSON report | \`$report\` |"
+          true
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        case "$rc" in
+          0) ;;
+          1) echo "::warning title=startup-sbom::fail-on threshold '$SS_FAIL_ON' reached" ;;
+          *) echo "::error title=startup-sbom::scanner exited with code $rc" ;;
+        esac
+
+    - name: Upload SARIF to code scanning
+      if: ${{ !cancelled() && inputs.upload-sarif == 'true' && steps.scan.outputs.sarif-file != '' }}
+      uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif-file }}
+        category: ${{ inputs.sarif-category }}
+
+    - name: Apply the scanner exit code
+      if: ${{ !cancelled() && steps.scan.outcome == 'success' }}
+      shell: bash
+      env:
+        SS_RC: ${{ steps.scan.outputs.exit-code }}
+      run: |
+        if [ -z "$SS_RC" ]; then
+          echo "::error title=startup-sbom::scan step did not report an exit code"
+          exit 3
+        fi
+        exit "$SS_RC"
