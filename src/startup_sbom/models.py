@@ -329,6 +329,7 @@ class LibraryLink(_Model):
     via: str = "needed"  # needed | dlopen | preload | interpreter | config
     confidence: Confidence = Confidence.HIGH
     depth: int = 1
+    parent: str | None = None  # canonical path of the object that loads this one
 
 
 class Binary(_Model):
