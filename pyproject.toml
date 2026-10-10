@@ -1,0 +1,140 @@
+[build-system]
+requires = ["uv_build>=0.11.0,<0.14"]
+build-backend = "uv_build"
+
+[project]
+name = "startup-sbom"
+version = "2.0.0"
+description = "Root-confined static analysis of Linux root filesystems and container images: map what runs at boot to its packages, reverse vulnerabilities into concrete threats, chain attacks and trace supply-chain blast radius."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "morpheuslord" }, { name = "Chiranjeevi G" }]
+requires-python = ">=3.11"
+keywords = [
+  "sbom", "cyclonedx", "spdx", "sarif", "vex", "systemd", "container", "oci",
+  "vulnerability", "cve", "threat-modeling", "attack-graph", "supply-chain",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "Intended Audience :: System Administrators",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
+  "Topic :: Security",
+  "Topic :: System :: Systems Administration",
+  "Typing :: Typed",
+]
+dependencies = [
+  "typer>=0.27",
+  "rich>=14",
+  "pydantic>=2.12",
+  "httpx>=0.28.1,<1",
+  "cyclonedx-python-lib>=11,<12",
+  "packageurl-python>=0.17",
+  "platformdirs>=4.4",
+  "cvss>=3.6",
+  "backports.zstd>=1.0; python_version < '3.14'",
+]
+
+[project.scripts]
+startup-sbom = "startup_sbom.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/morpheuslord/Startup-SBOM"
+Source = "https://github.com/morpheuslord/Startup-SBOM"
+Issues = "https://github.com/morpheuslord/Startup-SBOM/issues"
+Changelog = "https://github.com/morpheuslord/Startup-SBOM/blob/main/CHANGELOG.md"
+
+[dependency-groups]
+test = [
+  "pytest>=9.1",
+  "pytest-cov>=7.1",
+  "hypothesis>=6.150",
+  "respx>=0.23",
+  "jsonschema>=4.23",
+  "cyclonedx-python-lib[json-validation]>=11,<12",
+]
+lint = ["ruff>=0.17", "mypy>=2.4"]
+dev = [{ include-group = "test" }, { include-group = "lint" }, "pre-commit>=4.6"]
+
+[tool.uv]
+required-version = ">=0.11.0"
+default-groups = ["dev"]
+
+[tool.uv.build-backend]
+module-name = "startup_sbom"
+module-root = "src"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+  "E", "W", "F", "I", "N", "UP", "B", "A", "C4", "PIE", "SIM", "RET", "PERF",
+  "DTZ", "T10", "T20", "PT", "TC", "PTH", "RSE", "TID", "PL", "BLE", "LOG", "G",
+  "RUF", "S",
+]
+ignore = [
+  "PLR0911", "PLR0912", "PLR0913", "PLR0915", "PLR2004",
+  "PLC0415",
+  "PTH",       # in-image paths are POSIX strings handled with posixpath on purpose
+  "TC001", "TC002", "TC003",
+  "RUF001", "RUF002", "RUF003",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S108", "S603", "S607", "PLR2004", "ARG", "SLF001", "PT011"]
+"tools/**" = ["T20", "S310", "S603", "S607"]
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"xml.dom.minidom".msg = "Untrusted XML must not be parsed with minidom."
+"pickle".msg = "Never unpickle data derived from scanned filesystems."
+"tarfile.TarFile.extractall".msg = "Never extract untrusted archives; use the read-only RootFS VFS."
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_unreachable = true
+files = ["src"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["cvss.*", "backports.*", "compression.*"]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true
+
+[tool.pytest]
+minversion = "9.0"
+addopts = ["-ra", "--strict-markers", "--strict-config", "--import-mode=importlib"]
+testpaths = ["tests"]
+xfail_strict = true
+markers = [
+  "network: requires live network access (deselect with -m 'not network')",
+  "slow: slow test",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["startup_sbom"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_also = ["if TYPE_CHECKING:", "raise NotImplementedError", "@overload"]

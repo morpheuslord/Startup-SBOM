@@ -1,1 +1,32 @@
-__pycache__
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# Scan outputs (never commit results of scanning a real system)
+/reports/
+/out/
+*.cdx.json
+*.spdx.json
+*.sarif
+*.openvex.json
+service_flowchart*.png
+SVG/
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

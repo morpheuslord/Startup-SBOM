@@ -1,0 +1,587 @@
+"""Pydantic models for the native startup-sbom report.
+
+These models are the contract between every analysis stage and every output
+format.  The JSON Schema of :class:`Report` is published (``startup-sbom schema``)
+and versioned through :data:`SCHEMA_VERSION`.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import StrEnum
+
+from pydantic import BaseModel, ConfigDict, Field
+
+SCHEMA_VERSION = "2.0"
+
+
+class _Model(BaseModel):
+    model_config = ConfigDict(extra="forbid", validate_assignment=False)
+
+
+# --------------------------------------------------------------------------- enums
+class Severity(StrEnum):
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    NONE = "none"
+    UNKNOWN = "unknown"
+
+    @property
+    def rank(self) -> int:
+        return _SEVERITY_RANK[self]
+
+    @classmethod
+    def from_score(cls, score: float | None) -> Severity:
+        if score is None:
+            return cls.UNKNOWN
+        if score >= 9.0:
+            return cls.CRITICAL
+        if score >= 7.0:
+            return cls.HIGH
+        if score >= 4.0:
+            return cls.MEDIUM
+        if score > 0.0:
+            return cls.LOW
+        return cls.NONE
+
+    @classmethod
+    def parse(cls, value: str | None) -> Severity:
+        if not value:
+            return cls.UNKNOWN
+        v = value.strip().lower()
+        aliases = {
+            "important": "high",
+            "moderate": "medium",
+            "negligible": "low",
+            "unimportant": "low",
+            "untriaged": "unknown",
+            "not yet assigned": "unknown",
+        }
+        v = aliases.get(v, v)
+        try:
+            return cls(v)
+        except ValueError:
+            return cls.UNKNOWN
+
+
+_SEVERITY_RANK = {
+    Severity.CRITICAL: 5,
+    Severity.HIGH: 4,
+    Severity.MEDIUM: 3,
+    Severity.LOW: 2,
+    Severity.NONE: 1,
+    Severity.UNKNOWN: 0,
+}
+
+
+class PackageType(StrEnum):
+    DEB = "deb"
+    RPM = "rpm"
+    APK = "apk"
+    ALPM = "alpm"
+    PYPI = "pypi"
+    NPM = "npm"
+    GOLANG = "golang"
+    MAVEN = "maven"
+    CARGO = "cargo"
+    GENERIC = "generic"
+
+
+class InitSystem(StrEnum):
+    SYSTEMD = "systemd"
+    SYSV = "sysv"
+    OPENRC = "openrc"
+    RUNIT = "runit"
+    S6 = "s6"
+    SUPERVISORD = "supervisord"
+    INITTAB = "inittab"
+    CONTAINER = "container"
+
+
+class Activation(StrEnum):
+    BOOT = "boot"  # pulled in by the default target / runlevel
+    SOCKET = "socket"
+    TIMER = "timer"
+    PATH = "path"
+    DBUS = "dbus"
+    ENTRYPOINT = "entrypoint"
+    MANUAL = "manual"  # installed but not started automatically
+
+
+class VulnStatus(StrEnum):
+    AFFECTED = "affected"
+    FIXED = "fixed"
+    NOT_AFFECTED = "not_affected"
+    UNDER_INVESTIGATION = "under_investigation"
+    WILL_NOT_FIX = "will_not_fix"
+    NO_FIX_AVAILABLE = "no_fix_available"
+
+
+class Confidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class Reachability(StrEnum):
+    """How a vulnerable package is reachable on the analysed system (strongest first)."""
+
+    NETWORK_SERVICE = "network_service"  # executable of a network-listening service
+    BOOT_SERVICE = "boot_service"  # executable of a service started at boot
+    LINKED_BY_SERVICE = "linked_by_service"  # library loaded by a boot service
+    ON_DEMAND_SERVICE = "on_demand_service"  # socket/timer/dbus activated
+    SETUID = "setuid"  # ships a setuid/setgid or capability binary
+    KERNEL = "kernel"  # installed kernel package
+    INSTALLED = "installed"  # installed but not observed in any execution path
+
+
+class Consequence(StrEnum):
+    RCE = "code_execution"
+    PRIVESC = "privilege_escalation"
+    AUTH_BYPASS = "authentication_bypass"
+    INFO_DISCLOSURE = "information_disclosure"
+    TAMPERING = "tampering"
+    DOS = "denial_of_service"
+    SUPPLY_CHAIN = "supply_chain_compromise"
+    OTHER = "other"
+
+
+class SSVCDecision(StrEnum):
+    TRACK = "Track"
+    TRACK_STAR = "Track*"
+    ATTEND = "Attend"
+    ACT = "Act"
+
+
+# --------------------------------------------------------------------------- system
+class EOLInfo(_Model):
+    product: str
+    cycle: str
+    eol_date: str | None = None
+    is_eol: bool | None = None
+    lts: bool | None = None
+    source: str = "endoflife.date"
+
+
+class OSInfo(_Model):
+    id: str = "unknown"
+    id_like: list[str] = Field(default_factory=list)
+    name: str | None = None
+    pretty_name: str | None = None
+    version_id: str | None = None
+    version_codename: str | None = None
+    variant_id: str | None = None
+    build_id: str | None = None
+    family: str | None = None  # debian | rhel | suse | alpine | arch | ...
+    vuln_ecosystems: list[str] = Field(default_factory=list)  # e.g. ["Debian:12"]
+    eol: EOLInfo | None = None
+    evidence: list[str] = Field(default_factory=list)
+
+
+class ContainerMount(_Model):
+    source: str | None = None
+    destination: str
+    read_write: bool = True
+    kind: str | None = None
+
+
+class ContainerInfo(_Model):
+    kind: str = "container"  # container | image
+    engine: str | None = None  # docker | podman | nerdctl | archive
+    id: str | None = None
+    name: str | None = None
+    image: str | None = None
+    image_digest: str | None = None
+    platform: str | None = None
+    entrypoint: list[str] = Field(default_factory=list)
+    cmd: list[str] = Field(default_factory=list)
+    working_dir: str | None = None
+    user: str | None = None
+    exposed_ports: list[str] = Field(default_factory=list)
+    env_keys: list[str] = Field(default_factory=list)  # values never recorded
+    redacted_env_keys: list[str] = Field(default_factory=list)
+    labels: dict[str, str] = Field(default_factory=dict)
+    privileged: bool | None = None
+    cap_add: list[str] = Field(default_factory=list)
+    cap_drop: list[str] = Field(default_factory=list)
+    security_opt: list[str] = Field(default_factory=list)
+    mounts: list[ContainerMount] = Field(default_factory=list)
+    network_mode: str | None = None
+    pid_mode: str | None = None
+    ipc_mode: str | None = None
+    port_bindings: list[str] = Field(default_factory=list)
+    readonly_rootfs: bool | None = None
+
+
+# --------------------------------------------------------------------------- packages
+class Package(_Model):
+    """An installed package (OS or language ecosystem)."""
+
+    id: str  # stable bom-ref (normally the purl)
+    type: PackageType
+    name: str
+    version: str  # full distro version, epoch included where the distro uses one
+    epoch: int | None = None
+    arch: str | None = None
+    source_name: str | None = None
+    source_version: str | None = None
+    purl: str | None = None
+    cpes: list[str] = Field(default_factory=list)
+    summary: str | None = None
+    maintainer: str | None = None
+    vendor: str | None = None
+    packager: str | None = None
+    license: str | None = None
+    homepage: str | None = None
+    installed_size: int | None = None
+    depends: list[str] = Field(default_factory=list)
+    provides: list[str] = Field(default_factory=list)
+    file_count: int = 0
+    repository: str | None = None
+    signing_key: str | None = None
+    signed: bool | None = None
+    install_time: str | None = None
+    location: str | None = None  # database or manifest that recorded it
+    provenance_flags: list[str] = Field(default_factory=list)
+    properties: dict[str, str] = Field(default_factory=dict)
+
+
+# --------------------------------------------------------------------------- services
+class ListenAddress(_Model):
+    protocol: str  # tcp | udp | sctp | unix | netlink | fifo | vsock | unknown
+    address: str | None = None
+    port: int | None = None
+    path: str | None = None
+    scope: str = "network"  # network | loopback | local
+    source: str  # where it was declared (unit, config file, image config)
+
+
+class Hardening(_Model):
+    user: str = "root"
+    group: str | None = None
+    dynamic_user: bool = False
+    no_new_privileges: bool = False
+    capability_bounding_set: list[str] | None = None  # None = all (default)
+    ambient_capabilities: list[str] = Field(default_factory=list)
+    private_network: bool = False
+    private_tmp: bool = False
+    private_devices: bool = False
+    private_users: bool = False
+    protect_system: str | None = None
+    protect_home: str | None = None
+    restrict_suid_sgid: bool = False
+    system_call_filter: bool = False
+    restrict_address_families: list[str] | None = None
+    root_directory: str | None = None
+    exposure: float | None = None  # 0.0 (safe) .. 10.0 (unsafe), systemd-analyze style
+    exposure_rating: str | None = None
+    weaknesses: list[str] = Field(default_factory=list)
+
+    @property
+    def runs_as_root(self) -> bool:
+        return self.user in ("root", "0") and not self.dynamic_user
+
+
+class Command(_Model):
+    directive: str  # ExecStart, command, run, Entrypoint, ...
+    argv: list[str] = Field(default_factory=list)
+    raw: str
+    executable: str | None = None  # resolved, canonical in-image path
+    full_privileges: bool = False  # systemd '+' prefix
+    wrapped_by: list[str] = Field(default_factory=list)  # e.g. ["/usr/bin/tini", "/bin/sh"]
+
+
+class Service(_Model):
+    id: str  # "<init>:<name>"
+    name: str
+    init_system: InitSystem
+    description: str | None = None
+    unit_path: str | None = None
+    enabled: bool = False
+    masked: bool = False
+    activation: list[Activation] = Field(default_factory=list)
+    boot_path: list[str] = Field(default_factory=list)  # e.g. default.target -> x.service
+    commands: list[Command] = Field(default_factory=list)
+    executables: list[str] = Field(default_factory=list)
+    hardening: Hardening = Field(default_factory=Hardening)
+    listens: list[ListenAddress] = Field(default_factory=list)
+    packages: list[str] = Field(default_factory=list)  # Package.id owning executables
+    start_time_ms: float | None = None
+    evidence: list[str] = Field(default_factory=list)
+
+    @property
+    def starts_automatically(self) -> bool:
+        return bool(set(self.activation) - {Activation.MANUAL}) and not self.masked
+
+    @property
+    def network_exposed(self) -> bool:
+        return any(listen.scope == "network" for listen in self.listens)
+
+
+# --------------------------------------------------------------------------- binaries
+class LibraryLink(_Model):
+    soname: str
+    path: str | None = None
+    package: str | None = None
+    via: str = "needed"  # needed | dlopen | preload | interpreter | config
+    confidence: Confidence = Confidence.HIGH
+    depth: int = 1
+
+
+class Binary(_Model):
+    path: str
+    package: str | None = None
+    kind: str = "unknown"  # elf | script | unknown
+    arch: str | None = None
+    interpreter: str | None = None
+    needed: list[str] = Field(default_factory=list)
+    libraries: list[LibraryLink] = Field(default_factory=list)
+    unresolved: list[str] = Field(default_factory=list)
+    setuid: bool = False
+    setgid: bool = False
+    owner_uid: int | None = None
+    capabilities: list[str] = Field(default_factory=list)
+    embedded_package: str | None = None  # from ELF .note.package
+    used_by: list[str] = Field(default_factory=list)  # Service.id
+
+
+# --------------------------------------------------------------------------- vulnerabilities
+class CVSSScore(_Model):
+    version: str  # "3.1" | "3.0" | "4.0" | "2.0"
+    vector: str
+    base_score: float | None = None
+    severity: Severity = Severity.UNKNOWN
+    source: str | None = None
+
+
+class KEVInfo(_Model):
+    date_added: str | None = None
+    due_date: str | None = None
+    ransomware: bool = False
+    required_action: str | None = None
+    vendor_project: str | None = None
+    product: str | None = None
+
+
+class Vulnerability(_Model):
+    """A vulnerability matched against one installed package."""
+
+    id: str  # canonical id (CVE when known)
+    aliases: list[str] = Field(default_factory=list)
+    advisories: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)  # osv | arch | nvd
+    package: str  # Package.id
+    package_name: str
+    installed_version: str
+    fixed_versions: list[str] = Field(default_factory=list)
+    status: VulnStatus = VulnStatus.AFFECTED
+    summary: str | None = None
+    published: str | None = None
+    modified: str | None = None
+    severity: Severity = Severity.UNKNOWN
+    cvss: list[CVSSScore] = Field(default_factory=list)
+    cwes: list[str] = Field(default_factory=list)
+    epss: float | None = None
+    epss_percentile: float | None = None
+    kev: KEVInfo | None = None
+    references: list[str] = Field(default_factory=list)
+    match_confidence: Confidence = Confidence.HIGH
+    match_reason: str | None = None
+
+    @property
+    def best_cvss(self) -> CVSSScore | None:
+        order = {"4.0": 0, "3.1": 1, "3.0": 2, "2.0": 3}
+        scored = [c for c in self.cvss if c.vector]
+        return min(scored, key=lambda c: order.get(c.version, 9)) if scored else None
+
+
+# --------------------------------------------------------------------------- threats
+class AttackTechnique(_Model):
+    id: str  # ATT&CK id, e.g. T1190
+    name: str
+    tactic: str | None = None
+
+
+class SSVC(_Model):
+    exploitation: str  # none | public_poc | active
+    automatable: str  # yes | no
+    technical_impact: str  # partial | total
+    exposure: str  # small | controlled | open
+    decision: SSVCDecision
+
+
+class Threat(_Model):
+    """One vulnerability reversed into the context of the analysed system."""
+
+    id: str
+    vulnerability: str  # Vulnerability.id
+    package: str  # Package.id
+    title: str
+    reachability: Reachability
+    reachability_paths: list[list[str]] = Field(default_factory=list)
+    services: list[str] = Field(default_factory=list)  # Service.id
+    binaries: list[str] = Field(default_factory=list)
+    attack_vector: str = "unknown"  # network | adjacent | local | physical | unknown
+    privileges_required: str = "unknown"  # none | low | high | unknown
+    user_interaction: bool = False
+    precondition: str  # attacker state required, e.g. "remote" | "local:www-data"
+    postcondition: str  # attacker state gained, e.g. "root" | "local:www-data"
+    consequences: list[Consequence] = Field(default_factory=list)
+    run_as: str | None = None
+    network_exposed: bool = False
+    listens: list[ListenAddress] = Field(default_factory=list)
+    mitigations: list[str] = Field(default_factory=list)
+    attack_techniques: list[AttackTechnique] = Field(default_factory=list)
+    stride: list[str] = Field(default_factory=list)
+    ssvc: SSVC | None = None
+    risk_score: float = 0.0  # 0..100
+    score_factors: dict[str, float] = Field(default_factory=dict)
+    narrative: str
+    remediation: str | None = None
+
+
+class AttackStep(_Model):
+    rule: str
+    title: str
+    from_state: str
+    to_state: str
+    technique: AttackTechnique | None = None
+    threat: str | None = None  # Threat.id when vulnerability driven
+    vulnerability: str | None = None
+    service: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+    mitigated_by: list[str] = Field(default_factory=list)
+    likelihood: float = 0.0
+
+
+class AttackChain(_Model):
+    id: str
+    entry: str
+    goal: str
+    steps: list[AttackStep]
+    likelihood: float
+    impact: float
+    score: float  # 0..100
+    ssvc_decision: SSVCDecision
+    mitigated: bool = False
+    narrative: str
+
+
+# --------------------------------------------------------------------------- supply chain
+class SupplyChainFinding(_Model):
+    id: str
+    kind: str  # third_party_repo | unsigned_package | local_build | unmanaged_binary | ...
+    severity: Severity
+    subject: str  # package id, file path, or "system"
+    title: str
+    detail: str | None = None
+    evidence: list[str] = Field(default_factory=list)
+
+
+class BlastRadius(_Model):
+    package: str  # Package.id
+    vendor: str | None = None
+    services: list[str] = Field(default_factory=list)
+    binaries: list[str] = Field(default_factory=list)
+    example_paths: list[list[str]] = Field(default_factory=list)
+    vulnerabilities: list[str] = Field(default_factory=list)
+    score: float = 0.0
+
+
+class VendorSummary(_Model):
+    vendor: str
+    packages: int = 0
+    boot_packages: int = 0
+    services: int = 0
+    vulnerabilities: int = 0
+    critical: int = 0
+    high: int = 0
+    kev: int = 0
+
+
+class GraphNode(_Model):
+    id: str
+    kind: str
+    label: str
+
+
+class GraphEdge(_Model):
+    source: str
+    target: str
+    kind: str
+    confidence: Confidence = Confidence.HIGH
+
+
+class SupplyChain(_Model):
+    vendors: list[VendorSummary] = Field(default_factory=list)
+    findings: list[SupplyChainFinding] = Field(default_factory=list)
+    blast_radius: list[BlastRadius] = Field(default_factory=list)
+    nodes: list[GraphNode] = Field(default_factory=list)
+    edges: list[GraphEdge] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- report
+class TargetInfo(_Model):
+    kind: str  # dir | host | tar | docker-archive | oci-dir | oci-archive | container
+    reference: str
+    digest: str | None = None
+    platform: str | None = None
+
+
+class Coverage(_Model):
+    package_databases: list[str] = Field(default_factory=list)
+    init_systems: list[str] = Field(default_factory=list)
+    vulnerability_sources: list[str] = Field(default_factory=list)
+    vulnerability_ecosystems: list[str] = Field(default_factory=list)
+    offline: bool = False
+    limitations: list[str] = Field(default_factory=list)
+
+
+class Summary(_Model):
+    packages: int = 0
+    boot_packages: int = 0
+    services: int = 0
+    boot_services: int = 0
+    network_services: int = 0
+    vulnerabilities: int = 0
+    by_severity: dict[str, int] = Field(default_factory=dict)
+    kev: int = 0
+    threats: int = 0
+    act: int = 0
+    attend: int = 0
+    attack_chains: int = 0
+    supply_chain_findings: int = 0
+
+
+class ScanMetadata(_Model):
+    tool: str = "startup-sbom"
+    tool_version: str
+    schema_version: str = SCHEMA_VERSION
+    scan_id: str
+    started: datetime
+    finished: datetime | None = None
+    target: TargetInfo
+    coverage: Coverage = Field(default_factory=Coverage)
+
+
+class Report(_Model):
+    metadata: ScanMetadata
+    os: OSInfo = Field(default_factory=OSInfo)
+    container: ContainerInfo | None = None
+    summary: Summary = Field(default_factory=Summary)
+    packages: list[Package] = Field(default_factory=list)
+    services: list[Service] = Field(default_factory=list)
+    binaries: list[Binary] = Field(default_factory=list)
+    vulnerabilities: list[Vulnerability] = Field(default_factory=list)
+    threats: list[Threat] = Field(default_factory=list)
+    attack_chains: list[AttackChain] = Field(default_factory=list)
+    supply_chain: SupplyChain = Field(default_factory=SupplyChain)
+    warnings: list[str] = Field(default_factory=list)
+
+    def package_by_id(self) -> dict[str, Package]:
+        return {p.id: p for p in self.packages}
+
+    def service_by_id(self) -> dict[str, Service]:
+        return {s.id: s for s in self.services}
