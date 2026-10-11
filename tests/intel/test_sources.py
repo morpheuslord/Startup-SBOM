@@ -52,7 +52,10 @@ def test_cve_record_refs_and_advisory() -> None:
     part = parse_cve_record(load_json("cve_CVE-2024-6387.json"), "CVE-2024-6387", NOW)
     by_origin = {r.origin for r in part.refs}
     assert by_origin == {"cna", "cve-adp"}
-    assert any((urlsplit(r.url).hostname or "").endswith("qualys.com") for r in part.refs)
+    assert any(
+        (h := (urlsplit(r.url).hostname or "")) == "qualys.com" or h.endswith(".qualys.com")
+        for r in part.refs
+    )
     (advisory,) = part.advisories
     assert advisory.source == "cve.org"
     assert advisory.trust == "structured"
@@ -98,7 +101,10 @@ def test_ubuntu_vendor_status() -> None:
     assert vendor.status == "openssh: released (1:9.6p1-3ubuntu13.3)"
     assert "LoginGraceTime" in (vendor.mitigation or "")
     assert part.signals == []  # vendor data never changes exploitation
-    assert any((urlsplit(r.url).hostname or "").endswith("qualys.com") for r in part.refs)
+    assert any(
+        (h := (urlsplit(r.url).hostname or "")) == "qualys.com" or h.endswith(".qualys.com")
+        for r in part.refs
+    )
 
 
 def test_redhat_vendor_status_and_newline_joined_refs() -> None:

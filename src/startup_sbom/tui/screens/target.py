@@ -19,7 +19,6 @@ from textual.widgets import (
     DataTable,
     DirectoryTree,
     Footer,
-    Header,
     Input,
     Label,
     Select,
@@ -39,6 +38,7 @@ from startup_sbom.tui.state import (
     compose_target,
     split_target,
 )
+from startup_sbom.tui.widgets import SafeHeader
 
 if TYPE_CHECKING:
     from startup_sbom.tui.app import StartupSbomApp
@@ -104,7 +104,7 @@ class TargetScreen(Screen[None]):
         return cast("StartupSbomApp", self.app)
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield SafeHeader()
         with Vertical(id="target"):
             yield Label("Scheme")
             yield Select(

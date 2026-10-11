@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, VerticalScroll
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Input, Label, Markdown, Select, Static
+from textual.widgets import Button, Footer, Input, Label, Markdown, Select, Static
 from textual.widgets.markdown import MarkdownStream
 
 from startup_sbom.models import AIAssessment, Report
@@ -19,6 +19,7 @@ from startup_sbom.tui import integrations, render
 from startup_sbom.tui.messages import AIChunk, TaskDone, run_background
 from startup_sbom.tui.safe import md_escape, plain, txt
 from startup_sbom.tui.state import AI_AUDIENCES, AI_PROFILES, AISettings
+from startup_sbom.tui.widgets import SafeHeader
 
 INTRO = (
     "The AI analyst reviews the deterministic findings; every statement must cite report "
@@ -52,7 +53,7 @@ class AIPanelScreen(Screen[None]):
             for name, ok in sorted(providers.items())
         ]
         provider = s.provider if s.provider in providers else ""
-        yield Header()
+        yield SafeHeader()
         with Horizontal(classes="row"):
             yield Label("Provider")
             yield Select(opts, value=provider, allow_blank=False, id="ai-provider")

@@ -11,11 +11,12 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.widgets import Button, DataTable, Footer, Header, Label, Static
+from textual.widgets import Button, DataTable, Footer, Label, Static
 
 from startup_sbom.tui.messages import TaskDone, run_background
 from startup_sbom.tui.safe import txt
 from startup_sbom.tui.state import RecentEntry
+from startup_sbom.tui.widgets import SafeHeader
 
 if TYPE_CHECKING:
     from startup_sbom.tui.app import StartupSbomApp
@@ -45,7 +46,7 @@ class HomeScreen(Screen[None]):
         return cast("StartupSbomApp", self.app)
 
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield SafeHeader()
         with Vertical(id="home"):
             yield Static(Text("Startup-SBOM 2.0", style="bold"), id="home-title")
             yield Static(Text(INTRO), id="home-intro")

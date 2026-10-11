@@ -17,7 +17,6 @@ from textual.widgets import (
     Checkbox,
     Collapsible,
     Footer,
-    Header,
     Input,
     Label,
     Select,
@@ -39,6 +38,7 @@ from startup_sbom.tui.state import (
     equivalent_cli,
     validate_values,
 )
+from startup_sbom.tui.widgets import SafeHeader
 
 BOOL_FIELDS: tuple[tuple[str, str], ...] = (
     ("offline", "Offline (cached data only)"),
@@ -98,7 +98,7 @@ class SettingsScreen(Screen[None]):
             for name, ok in sorted(providers.items())
         ]
         provider_value = v.ai_provider if v.ai_provider in {o[1] for o in provider_opts} else ""
-        yield Header()
+        yield SafeHeader()
         with VerticalScroll(id="settings"):
             yield Static("", id="settings-target")
             yield Label("Data", classes="section")

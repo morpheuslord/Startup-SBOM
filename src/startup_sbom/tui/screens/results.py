@@ -20,7 +20,6 @@ from textual.widgets import (
     Checkbox,
     DataTable,
     Footer,
-    Header,
     Input,
     Label,
     Markdown,
@@ -64,6 +63,7 @@ from startup_sbom.tui.data import (
 from startup_sbom.tui.messages import TaskDone, run_background
 from startup_sbom.tui.safe import plain, txt, wrap_txt
 from startup_sbom.tui.state import AISettings
+from startup_sbom.tui.widgets import SafeHeader
 
 if TYPE_CHECKING:
     from startup_sbom.tui.app import StartupSbomApp
@@ -149,7 +149,7 @@ class ResultsScreen(Screen[None]):
 
     # ------------------------------------------------------------------ compose
     def compose(self) -> ComposeResult:
-        yield Header()
+        yield SafeHeader()
         # No ``initial=``: the first pane activates by itself, while an explicit
         # initial tab races ContentTabs validation when the screen is pushed
         # during app startup (e.g. ``run(report_path=...)``).

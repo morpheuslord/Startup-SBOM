@@ -8,7 +8,11 @@ import lzma
 import tarfile
 from collections.abc import Callable
 
-from backports import zstd
+try:
+    from compression import zstd  # Python >= 3.14
+except ImportError:
+    from backports import zstd  # type: ignore[no-redef]
+
 from sc_helpers import make_pgp_key, pkg
 
 from fsbuilder import File

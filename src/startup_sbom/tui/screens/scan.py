@@ -15,7 +15,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal
 from textual.screen import Screen
-from textual.widgets import Button, Footer, Header, Label, ProgressBar, RichLog, Static
+from textual.widgets import Button, Footer, Label, ProgressBar, RichLog, Static
 
 from startup_sbom.errors import ScanCancelledError
 from startup_sbom.models import Report
@@ -23,6 +23,7 @@ from startup_sbom.tui import integrations
 from startup_sbom.tui.messages import ScanLog, ScanProgress, TaskDone, UILogHandler, run_background
 from startup_sbom.tui.safe import plain, txt
 from startup_sbom.tui.state import FormValues, ScanRequest, default_filename
+from startup_sbom.tui.widgets import SafeHeader
 
 if TYPE_CHECKING:
     from startup_sbom.pipeline import ProgressEvent
@@ -112,7 +113,7 @@ class ScanScreen(Screen[None]):
     def compose(self) -> ComposeResult:
         title = Text("Scanning ", style="bold")
         title.append_text(txt(self.request.target, max_len=300))
-        yield Header()
+        yield SafeHeader()
         yield Static(title, id="scan-title")
         yield ProgressBar(total=None, show_eta=False, id="scan-bar")
         yield Label("Starting…", id="scan-stage")
