@@ -51,7 +51,7 @@ dependencies = [
 tui = ["textual>=8.2,<9"]
 pdf = ["typst>=0.15,<0.16"]
 ai = [
-  "pydantic-ai-slim[anthropic,openai,google,groq,mistral,openrouter,mcp]>=2.55,<3",
+  "pydantic-ai-slim[anthropic,openai,google,groq,mistral,openrouter,mcp,duckduckgo]>=2.55,<3",
   "mcp>=2.3,<3",
 ]
 agents-server = ["startup-sbom[ai]", "fasta2a>=2.1.1,<3", "uvicorn>=0.38"]

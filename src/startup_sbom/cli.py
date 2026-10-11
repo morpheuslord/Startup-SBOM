@@ -354,7 +354,7 @@ def _mount_optional_apps() -> None:
     else:
         app.add_typer(intel_app, name="intel", help="Look up and cache CVE intelligence.")
     try:
-        from startup_sbom.ai.cli import app as ai_app  # type: ignore[import-not-found]
+        from startup_sbom.ai.cli import app as ai_app
     except ImportError:  # pragma: no cover
         pass
     else:
