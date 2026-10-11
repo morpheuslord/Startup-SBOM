@@ -164,8 +164,14 @@ def _kind(url: str, tags: Iterable[str]) -> str:
     for tag, kind in KIND_BY_TAG:
         if tag in tag_set:
             return kind
-    lowered = url.lower()
-    if "/lists/" in lowered or "seclists.org" in lowered or "lists." in lowered:
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if (
+        "/lists/" in parts.path.lower()
+        or host == "seclists.org"
+        or host.endswith(".seclists.org")
+        or host.startswith("lists.")
+    ):
         return "mailing-list"
     return "writeup"
 

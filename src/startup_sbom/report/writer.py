@@ -26,7 +26,9 @@ from startup_sbom.report.openvex import render_openvex
 from startup_sbom.report.sarif import render_sarif
 from startup_sbom.report.spdx import render_spdx
 
-FILE_MODE = 0o644
+# Reports describe a system's vulnerabilities, so they are written owner-only;
+# loosen the mode after writing if a report is meant to be shared.
+FILE_MODE = 0o600
 
 
 TextRenderer = Callable[[Report, RenderOptions], str]

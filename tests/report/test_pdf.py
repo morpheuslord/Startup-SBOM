@@ -499,7 +499,7 @@ def test_write_reports_pdf_and_json(tmp_path: Path) -> None:
     assert out["pdf"].read_bytes() == render_pdf(report)
     assert out["json"].read_text(encoding="utf-8") == render(report, "json")
     if sys.platform != "win32":
-        assert stat.S_IMODE(out["pdf"].stat().st_mode) == 0o644
+        assert stat.S_IMODE(out["pdf"].stat().st_mode) == 0o600
     assert sorted(p.name for p in (tmp_path / "o").iterdir()) == ["report.json", "report.pdf"]
 
 

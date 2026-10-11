@@ -103,7 +103,7 @@ def test_html_escapes_hostile(hostile_report: Report) -> None:
 def test_html_csp_hashes_match(report: Report) -> None:
     text = render(report, "html")
     style = re.search(r"<style>(.*?)</style>", text, re.S)
-    script = re.search(r"<script>(.*?)</script>", text, re.S)
+    script = re.search(r"<script>(.*?)</script>", text, re.S | re.I)
     assert style is not None
     assert script is not None
     for block in (style.group(1), script.group(1)):

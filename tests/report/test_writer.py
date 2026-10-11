@@ -112,7 +112,7 @@ def test_write_reports(report: Report, tmp_path: Path) -> None:
             report, fmt, RenderOptions(cdx_spec="1.7")
         )
         if sys.platform != "win32":
-            assert stat.S_IMODE(path.stat().st_mode) == 0o644
+            assert stat.S_IMODE(path.stat().st_mode) == 0o600
     leftovers = [p.name for p in (tmp_path / "out" / "nested").iterdir() if p.name.startswith(".")]
     assert leftovers == []
 
