@@ -40,8 +40,72 @@ ALLOWED_HOSTS = frozenset(
         "security.archlinux.org",
         "services.nvd.nist.gov",
         "endoflife.date",
+        # structured intel feeds (startup_sbom.intel)
+        "cveawg.mitre.org",
+        "ubuntu.com",
+        "access.redhat.com",
+        "api.github.com",
     }
 )
+
+# General-purpose hosts are allowed only below fixed path prefixes, so the allow-list
+# keeps meaning something (anyone can publish under raw.githubusercontent.com).
+ALLOWED_PATH_PREFIXES: Mapping[str, tuple[str, ...]] = {
+    "raw.githubusercontent.com": (
+        "/rapid7/metasploit-framework/master/db/modules_metadata_base.json",
+        "/projectdiscovery/nuclei-templates/main/cves.json",
+        "/nomi-sec/PoC-in-GitHub/master/",
+    ),
+    "gitlab.com": ("/exploit-database/exploitdb/-/raw/main/files_exploits.csv",),
+}
+
+# Secret-bearing headers and the only hosts they may ever be sent to.
+SECRET_HEADER_HOSTS: Mapping[str, frozenset[str]] = {
+    "authorization": frozenset({"api.github.com"}),
+    "apikey": frozenset({"services.nvd.nist.gov"}),
+}
+# Environment variable -> (bound host, header name, value template).
+_ENV_AUTH: tuple[tuple[str, str, str, str], ...] = (
+    ("GITHUB_TOKEN", "api.github.com", "Authorization", "Bearer {}"),
+    ("NVD_API_KEY", "services.nvd.nist.gov", "apiKey", "{}"),
+)
+
+
+def url_allowed(url: str) -> bool:
+    """True when ``url`` is HTTPS to an allow-listed host (and path, where restricted)."""
+    parts = urlsplit(url)
+    if parts.scheme != "https" or parts.port not in (None, 443) or parts.username:
+        return False
+    host = parts.hostname or ""
+    if host in ALLOWED_HOSTS:
+        return True
+    prefixes = ALLOWED_PATH_PREFIXES.get(host)
+    if not prefixes:
+        return False
+    path = parts.path
+    if "%" in path or "\\" in path or any(seg in (".", "..") for seg in path.split("/")):
+        return False
+    return any(path == p or (p.endswith("/") and path.startswith(p)) for p in prefixes)
+
+
+def auth_headers(url: str, env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Optional API credentials from the environment, only for the host they belong to."""
+    source = os.environ if env is None else env
+    host = urlsplit(url).hostname
+    out: dict[str, str] = {}
+    for var, bound, header, template in _ENV_AUTH:
+        value = source.get(var, "").strip()
+        if value and host == bound:
+            out[header] = template.format(value)
+    return out
+
+
+def _check_secret_headers(host: str | None, headers: Mapping[str, str] | None) -> None:
+    for name in headers or {}:
+        bound = SECRET_HEADER_HOSTS.get(name.lower())
+        if bound is not None and host not in bound:
+            raise NetworkError(f"refusing to send credential header to {host}")
+
 
 MAX_RESPONSE_BYTES = 256 * 1024 * 1024
 
@@ -108,9 +172,9 @@ class HttpClient:
 
     @staticmethod
     def _check_url(url: str) -> None:
-        parts = urlsplit(url)
-        if parts.scheme != "https" or parts.hostname not in ALLOWED_HOSTS:
-            raise NetworkError(f"refusing request to non-allow-listed URL: {parts.hostname}")
+        if not url_allowed(url):
+            host = urlsplit(url).hostname
+            raise NetworkError(f"refusing request to non-allow-listed URL: {host}")
 
     def _cache_paths(self, key: str) -> tuple[Path, Path]:
         digest = hashlib.sha256(key.encode()).hexdigest()
@@ -158,6 +222,7 @@ class HttpClient:
         params: Mapping[str, str] | None = None,
     ) -> httpx.Response:
         self._check_url(url)
+        _check_secret_headers(urlsplit(url).hostname, headers)
         if self.offline:
             raise NetworkError("offline mode: network access disabled")
         delay = 1.0
