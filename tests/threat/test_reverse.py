@@ -198,8 +198,40 @@ def test_missing_cvss_is_conservative_no_crash(ctx: ScanContext) -> None:
     assert t.attack_vector == "unknown"
     assert t.privileges_required == "unknown"
     assert t.consequences  # still records something (OTHER at worst)
-    assert t.score_factors["exploitability_unknown"] == 1.0
+    # score_factors mirror the exact explanation: {factor: contribution in points}
+    assert t.explanation is not None
+    x = next(f for f in t.explanation.factors if f.name == "exploitability")
+    assert x.value is None
+    assert any("no CVSS vector" in lim for lim in t.explanation.limits)
     assert t.ssvc is not None
+
+
+def test_missing_cvss_limitation_is_aggregated_not_per_cve(ctx: ScanContext) -> None:
+    """Thousands of vector-less CVEs must yield ONE limitation line, not one each."""
+    p = F.pkg("libfoo", "1.0-1")
+    vulns = [F.vuln(f"CVE-2099-{i:04d}", p) for i in range(1, 9)]  # 8 CVEs, no CVSS
+    vulns.append(F.vuln("CVE-2099-9999", p, cvss_scores=[F.cvss(PWNKIT, 7.8)]))
+    threats = reverse_vulnerabilities(F.make_report(packages=[p], vulnerabilities=vulns), ctx)
+    assert len(threats) == 9
+    lims = [x for x in ctx.limitations if "no CVSS vector" in x]
+    assert len(lims) == 1
+    assert lims[0].startswith("8 of 9 vulnerabilities have no CVSS vector")
+    assert "CVE-2099-0001, CVE-2099-0002, CVE-2099-0003, CVE-2099-0004, CVE-2099-0005" in lims[0]
+    assert lims[0].endswith("and 3 more)")
+    assert "CVE-2099-0006" not in lims[0]  # only the first five ids are listed
+
+
+def test_unknown_package_warning_is_aggregated(ctx: ScanContext) -> None:
+    p = F.pkg("bash", "5.2-1")
+    vulns = [F.vuln(f"CVE-2098-{i:04d}", p) for i in range(1, 4)]
+    for v in vulns:
+        v.package = "pkg:deb/debian/ghost@0"  # not in the inventory
+    threats = reverse_vulnerabilities(F.make_report(packages=[p], vulnerabilities=vulns), ctx)
+    assert threats == []
+    warns = [w for w in ctx.warnings if "missing from the inventory" in w]
+    assert len(warns) == 1
+    assert "3 vulnerabilities" in warns[0]
+    assert "CVE-2098-0001" in warns[0]
 
 
 def test_fixed_and_not_affected_are_skipped(ctx: ScanContext) -> None:
@@ -238,7 +270,9 @@ def test_hardening_lowers_score_and_lists_mitigations(ctx: ScanContext) -> None:
     assert t.run_as == "www-data"
     assert t.postcondition == "local:www-data"
     assert any("NoNewPrivileges" in m for m in t.mitigations)
-    assert t.score_factors["mitigation"] < 1.0
+    mitigation = {k: v for k, v in t.score_factors.items() if k.startswith("mitigation:")}
+    assert mitigation
+    assert all(v < 0.0 for v in mitigation.values())  # each directive lowers the score
 
 
 def test_on_demand_socket_activation(ctx: ScanContext) -> None:

@@ -6,6 +6,10 @@ derives privilege-lattice edges; this module takes their reachability fixpoint
 from each entry state, enumerates the simple paths to the strongest reachable
 goal, scores and labels them, and writes a step-by-step narrative.  Pure Python
 — no graph library.
+
+Chain score = ``100 · Π p_step · goal impact`` (formula ``chain/1``), decomposed
+exactly by LMDI into ``AttackChain.explanation``.  The former chain-length bonus
+was dropped: it rewarded longer, less likely chains and pushed scores past 100.
 """
 
 from __future__ import annotations
@@ -13,6 +17,7 @@ from __future__ import annotations
 import hashlib
 
 from startup_sbom.context import ScanContext
+from startup_sbom.explain.attribution import ChainStepInput, explain_chain
 from startup_sbom.models import (
     AttackChain,
     AttackStep,
@@ -31,14 +36,13 @@ from startup_sbom.threat.facts import (
 )
 from startup_sbom.threat.narrative import chain_narrative, step_line
 from startup_sbom.threat.reachability import SystemIndex
-from startup_sbom.threat.rules import Edge, derive
+from startup_sbom.threat.rules import MITIGATION_DOWNGRADE, Edge, derive
 
 #: Longest chain the enumerator will build (keeps path search bounded).
 MAX_DEPTH = 6
 #: Hard cap on paths explored per entry before ranking.
 MAX_PATHS_PER_ENTRY = 200
 GOAL_IMPACT = {"persistence": 1.0, "host": 1.0, "container_escape": 1.0, "root": 0.9}
-CHAIN_BONUS = 0.25
 _DEFAULT_GOAL_SSVC = {
     "persistence": SSVCDecision.ATTEND,
     "host": SSVCDecision.ATTEND,
@@ -158,62 +162,95 @@ def _make_chain(
     threats_by_id: dict[str, Threat],
 ) -> AttackChain:
     steps: list[AttackStep] = []
-    step_lines: list[str] = []
-    likelihood = 1.0
     worst_rank = -1
     worst_decision = _DEFAULT_GOAL_SSVC.get(goal, SSVCDecision.TRACK)
     mitigated = False
 
-    for i, e in enumerate(path, start=1):
+    for e in path:
         tech = attack.technique(e.technique_id) if e.technique_id else None
-        step = AttackStep(
-            rule=e.rule,
-            title=e.title,
-            from_state=e.from_state,
-            to_state=e.to_state,
-            technique=tech,
-            threat=e.threat_id,
-            vulnerability=e.vulnerability,
-            service=e.service,
-            evidence=list(e.evidence),
-            mitigated_by=list(e.mitigated_by),
-            likelihood=round(e.likelihood, 4),
-        )
-        steps.append(step)
-        likelihood *= e.likelihood
-        mitigated = mitigated or e.mitigated or bool(e.mitigated_by)
-        step_lines.append(
-            step_line(
-                i,
-                tech.tactic if tech else None,
-                e.technique_id,
-                e.title,
-                e.from_state,
-                e.to_state,
-                e.mitigated_by,
+        steps.append(
+            AttackStep(
+                id=step_id(e.rule, e.from_state, e.to_state, e.threat_id or e.service or ""),
+                rule=e.rule,
+                title=e.title,
+                from_state=e.from_state,
+                to_state=e.to_state,
+                technique=tech,
+                threat=e.threat_id,
+                vulnerability=e.vulnerability,
+                service=e.service,
+                evidence=list(e.evidence),
+                mitigated_by=list(e.mitigated_by),
+                likelihood=round(e.likelihood, 4),
             )
         )
+        mitigated = mitigated or e.mitigated or bool(e.mitigated_by)
         decision = _step_decision(e, threats_by_id)
         if decision is not None and RANK[decision] > worst_rank:
             worst_rank, worst_decision = RANK[decision], decision
 
     impact = GOAL_IMPACT.get(goal, 0.6)
-    bonus = 1.0 + CHAIN_BONUS * (len(path) - 1)
-    score = round(100.0 * max(0.0, min(1.0, likelihood * impact * bonus)), 1)
+    cid = _chain_id(entry, path)
+    inputs = [
+        step_input(s, e.likelihood / MITIGATION_DOWNGRADE if e.mitigated_by else e.likelihood)
+        for s, e in zip(steps, path, strict=True)
+    ]
+    explanation = explain_chain(cid, inputs, impact)
+    likelihood = 1.0
+    for s in inputs:
+        likelihood *= s.likelihood * s.mitigation_multiplier
     chain = AttackChain(
-        id=_chain_id(entry, path),
+        id=cid,
         entry=entry,
         goal=goal,
         steps=steps,
         likelihood=round(likelihood, 4),
         impact=impact,
-        score=score,
+        score=round(max(0.0, min(100.0, explanation.total)), 1),
         ssvc_decision=worst_decision,
         mitigated=mitigated,
         narrative="",
+        explanation=explanation,
     )
-    chain.narrative = chain_narrative(chain, step_lines)
+    chain.narrative = narrate(chain)
     return chain
+
+
+def step_id(rule: str, from_state: str, to_state: str, subject: str) -> str:
+    """Canonical edge id shared by every chain that uses the same exploit step."""
+    sig = "\x1f".join((rule, from_state, to_state, subject))
+    return "step:" + hashlib.sha256(sig.encode("utf-8", "replace")).hexdigest()[:12]
+
+
+def step_input(step: AttackStep, base_likelihood: float) -> ChainStepInput:
+    """Explanation input for one step (hardening downgrade shown as its own factor)."""
+    label = step.technique.id if step.technique else step.rule
+    label = f"{label} {step.vulnerability or step.title}"
+    return ChainStepInput(
+        id=step.id or step.rule,
+        label=f"{step.from_state} -> {step.to_state} ({label})",
+        likelihood=base_likelihood,
+        mitigation=step.mitigated_by[0] if step.mitigated_by else None,
+        mitigation_multiplier=MITIGATION_DOWNGRADE if step.mitigated_by else 1.0,
+        evidence=(step.derivation,) if step.derivation else (),
+    )
+
+
+def narrate(chain: AttackChain) -> str:
+    """Step-by-step chain narrative (regenerated whenever the score changes)."""
+    lines = [
+        step_line(
+            i,
+            s.technique.tactic if s.technique else None,
+            s.technique.id if s.technique else None,
+            s.title,
+            s.from_state,
+            s.to_state,
+            s.mitigated_by,
+        )
+        for i, s in enumerate(chain.steps, start=1)
+    ]
+    return chain_narrative(chain, lines)
 
 
 def _step_decision(e: Edge, threats_by_id: dict[str, Threat]) -> SSVCDecision | None:

@@ -56,12 +56,16 @@ def reverse_vulnerabilities(report: Report, ctx: ScanContext) -> list[Threat]:
     index = SystemIndex(report)
     reach_cache: dict[str, ReachInfo] = {}
     threats: list[Threat] = []
+    no_cvss: list[str] = []
+    unknown_pkg: list[str] = []
+    total = 0
     for vuln in sorted(report.vulnerabilities, key=lambda v: (v.id, v.package)):
         if vuln.status in SKIP_STATUS:
             continue
+        total += 1
         pkg = index.packages.get(vuln.package)
         if pkg is None:
-            ctx.warn(f"threat: vulnerability {vuln.id} references unknown package {vuln.package}")
+            unknown_pkg.append(vuln.id)
             continue
         info = reach_cache.get(pkg.id)
         if info is None:
@@ -69,20 +73,42 @@ def reverse_vulnerabilities(report: Report, ctx: ScanContext) -> list[Threat]:
 
             info = classify(index, pkg)
             reach_cache[pkg.id] = info
-        threats.append(_build(report, ctx, index, vuln, pkg, info))
+        facts = best(vuln)
+        if not facts.known:
+            no_cvss.append(vuln.id)
+        threats.append(_build(report, index, vuln, pkg, info, facts))
+    if unknown_pkg:
+        ctx.warn(
+            f"threat: {len(unknown_pkg):,} vulnerabilit{'y' if len(unknown_pkg) == 1 else 'ies'} "
+            f"reference packages missing from the inventory and were skipped "
+            f"({_examples(unknown_pkg)})"
+        )
+    if no_cvss:
+        ctx.limit(
+            f"{len(no_cvss):,} of {total:,} vulnerabilities have no CVSS vector; their attack "
+            f"vector, privileges and automatability were assessed conservatively as unknown "
+            f"({_examples(no_cvss)})"
+        )
     threats.sort(key=lambda t: (-t.risk_score, t.id))
     return threats
 
 
+def _examples(ids: list[str], n: int = 5) -> str:
+    """The first ``n`` distinct ids, order preserved, plus an "and N more" tail."""
+    seen = list(dict.fromkeys(ids))
+    shown = ", ".join(seen[:n])
+    rest = len(seen) - n
+    return f"{shown} and {rest:,} more" if rest > 0 else shown
+
+
 def _build(
     report: Report,
-    ctx: ScanContext,
     index: SystemIndex,
     vuln: Vulnerability,
     pkg: Package,
     info: ReachInfo,
+    facts: VectorFacts,
 ) -> Threat:
-    facts = best(vuln)
     consequences, cons_evidence = _consequences(vuln, facts)
     primary = index.services.get(info.primary_service or "")
     run_as = service_user(primary) if primary else None
@@ -91,15 +117,31 @@ def _build(
 
     techniques, tech_label, tech_sources = _techniques(vuln, facts, consequences, info)
     stride = _stride(consequences, facts)
-    mitigations, discount, mit_evidence = service_mitigations(primary, info.level, consequences)
+    mit_factors = mitigation_factors(primary, info.level, consequences)
+    mitigations = [m[0] for m in mit_factors]
+    mit_evidence = [f"mitigation: {m[2]}" for m in mit_factors]
     ssvc_rec, ssvc_reasons = ssvc.assess(
         vuln, facts, consequences, info.level, info.network_exposed
     )
-    factors = _score_factors(vuln, facts, info, consequences, precondition, postcondition, discount)
-    risk = scoring.combine(factors)
+    threat_id = _threat_id(vuln, pkg)
+    inputs = scoring.build_inputs(
+        threat_id,
+        epss=vuln.epss,
+        kev=vuln.kev is not None,
+        facts=facts,
+        level=info.level,
+        network_exposed=info.network_exposed,
+        link_confidence=info.link.confidence if info.link else None,
+        in_container=False,
+        consequences=consequences,
+        precondition=precondition,
+        postcondition=postcondition,
+        mitigations=[(m[0], m[1]) for m in mit_factors],
+    )
+    risk, explanation = scoring.explain(inputs)
 
     threat = Threat(
-        id=_threat_id(vuln, pkg),
+        id=threat_id,
         vulnerability=vuln.id,
         package=pkg.id,
         title=_title(vuln, pkg, info, postcondition),
@@ -121,9 +163,10 @@ def _build(
         stride=stride,
         ssvc=ssvc_rec,
         risk_score=risk,
-        score_factors=factors,
+        score_factors={f.name: round(f.contribution, 3) for f in explanation.factors},
         narrative="",
         remediation=_remediation(vuln),
+        explanation=explanation,
     )
     threat.narrative = threat_narrative(
         threat,
@@ -143,10 +186,6 @@ def _build(
         *(f"ATT&CK via {s}" for s in tech_sources),
     ]
     if not facts.known:
-        ctx.limit(
-            f"{vuln.id}: no CVSS vector available; attack vector, privileges and "
-            "automatability assessed conservatively as unknown"
-        )
         evidence.insert(0, "no CVSS vector: attack vector and privileges treated as unknown")
     _record_evidence(threat, evidence)
     return threat
@@ -370,47 +409,59 @@ def _stride(consequences: set[Consequence], facts: VectorFacts) -> list[str]:
 
 
 # --------------------------------------------------------------------------- mitigations
+def mitigation_factors(
+    service: Service | None,
+    level: Reachability,
+    consequences: set[Consequence],
+) -> list[tuple[str, float, str]]:
+    """``(directive label, score multiplier, why)`` for each mitigation on ``service``."""
+    if service is None:
+        return []
+    h = service.hardening
+    out: list[tuple[str, float, str]] = []
+    privesc = bool(consequences & {Consequence.PRIVESC, Consequence.RCE})
+    if h.no_new_privileges and privesc:
+        out.append(("NoNewPrivileges=yes", 0.5, "NoNewPrivileges=yes blocks setuid/privilege gain"))
+    if not h.runs_as_root:
+        out.append(
+            (
+                f"User={h.user} (non-root)" if not h.dynamic_user else "DynamicUser=yes",
+                0.7,
+                "service runs as a non-root account, so compromise lands unprivileged",
+            )
+        )
+    if _caps_dropped(h) and privesc:
+        out.append(
+            (
+                "CapabilityBoundingSet drops dangerous capabilities",
+                0.7,
+                "capability bounding set drops CAP_SYS_ADMIN/DAC/MODULE/PTRACE",
+            )
+        )
+    if h.restrict_suid_sgid:
+        out.append(
+            ("RestrictSUIDSGID=yes", 0.85, "RestrictSUIDSGID=yes prevents new setuid binaries")
+        )
+    if h.system_call_filter and level in (Reachability.KERNEL, Reachability.SETUID):
+        out.append(
+            ("SystemCallFilter set", 0.8, "system-call filter reduces kernel-exploit reliability")
+        )
+    if h.protect_system == "strict":
+        out.append(("ProtectSystem=strict", 0.9, "read-only system paths hinder persistence"))
+    return out
+
+
 def service_mitigations(
     service: Service | None,
     level: Reachability,
     consequences: set[Consequence],
 ) -> tuple[list[str], float, list[str]]:
     """Mitigating directives on ``service`` and the multiplicative score discount."""
-    if service is None:
-        return [], 1.0, []
-    h = service.hardening
-    mits: list[str] = []
-    evidence: list[str] = []
+    factors = mitigation_factors(service, level, consequences)
     discount = 1.0
-
-    def add(label: str, factor: float, why: str) -> None:
-        nonlocal discount
-        mits.append(label)
-        discount *= factor
-        evidence.append(f"mitigation: {why}")
-
-    privesc = bool(consequences & {Consequence.PRIVESC, Consequence.RCE})
-    if h.no_new_privileges and privesc:
-        add("NoNewPrivileges=yes", 0.5, "NoNewPrivileges=yes blocks setuid/privilege gain")
-    if not h.runs_as_root:
-        add(
-            f"User={h.user} (non-root)" if not h.dynamic_user else "DynamicUser=yes",
-            0.7,
-            "service runs as a non-root account, so compromise lands unprivileged",
-        )
-    if _caps_dropped(h) and privesc:
-        add(
-            "CapabilityBoundingSet drops dangerous capabilities",
-            0.7,
-            "capability bounding set drops CAP_SYS_ADMIN/DAC/MODULE/PTRACE",
-        )
-    if h.restrict_suid_sgid:
-        add("RestrictSUIDSGID=yes", 0.85, "RestrictSUIDSGID=yes prevents new setuid binaries")
-    if h.system_call_filter and level in (Reachability.KERNEL, Reachability.SETUID):
-        add("SystemCallFilter set", 0.8, "system-call filter reduces kernel-exploit reliability")
-    if h.protect_system == "strict":
-        add("ProtectSystem=strict", 0.9, "read-only system paths hinder persistence")
-    return mits, round(discount, 4), evidence
+    for _, m, _ in factors:
+        discount *= m
+    return [f[0] for f in factors], round(discount, 4), [f"mitigation: {f[2]}" for f in factors]
 
 
 def _caps_dropped(h: Hardening) -> bool:
@@ -422,31 +473,6 @@ def _caps_dropped(h: Hardening) -> bool:
         return True
     kept = {c.lower().removeprefix("cap_") for c in h.capability_bounding_set}
     return not (kept & DANGEROUS_CAPS)
-
-
-# --------------------------------------------------------------------------- scoring
-def _score_factors(
-    vuln: Vulnerability,
-    facts: VectorFacts,
-    info: ReachInfo,
-    consequences: set[Consequence],
-    precondition: str,
-    postcondition: str,
-    mitigation: float,
-) -> dict[str, float]:
-    factors = scoring.likelihood(vuln.epss, vuln.kev is not None, facts)
-    link_conf = info.link.confidence if info.link else None
-    factors["reachability"] = scoring.reach_weight(
-        info.level,
-        facts,
-        network_exposed=info.network_exposed,
-        link_confidence=link_conf,
-        in_container=False,  # set below when a container image is analysed
-    )
-    factors["impact"] = scoring.impact(consequences)
-    factors["privilege_gain"] = scoring.privilege_gain(precondition, postcondition)
-    factors["mitigation"] = mitigation
-    return factors
 
 
 # --------------------------------------------------------------------------- labels

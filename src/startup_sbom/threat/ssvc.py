@@ -3,7 +3,9 @@
 The CISA tree's fourth input, *Mission & Well-Being*, cannot be observed in a
 root filesystem.  We substitute the deployer-tree *System Exposure* observed by
 the scan as the situated proxy: ``small → low``, ``controlled → medium``,
-``open → high``.  The full 36-row table is reproduced in :data:`TABLE`.
+``open → high``.  The full 36-row table is reproduced in :data:`TABLE`; the
+verbatim CERT/CC CSV and decision-path traces (plus the BOD 26-04 timeline tree)
+live in :mod:`startup_sbom.explain.ssvc_trace`.
 """
 
 from __future__ import annotations
@@ -46,6 +48,8 @@ TABLE: dict[tuple[str, str, str], tuple[SSVCDecision, SSVCDecision, SSVCDecision
 }
 _MISSION_INDEX = {"low": 0, "medium": 1, "high": 2}
 RANK = {_T: 0, _TS: 1, _AT: 2, _AC: 3}
+#: Ordering of the Exploitation decision point (intel may raise, never lower, it).
+EXPLOITATION_RANK = {"none": 0, "public_poc": 1, "active": 2}
 
 
 def decide(
@@ -127,6 +131,11 @@ def assess(
         decision=decision,
     )
     return ssvc, reasons
+
+
+def not_automatable_reason(facts: VectorFacts) -> str:
+    """Which CVSS base metrics prevent reliable automation."""
+    return _not_auto(facts)
 
 
 def _not_auto(facts: VectorFacts) -> str:

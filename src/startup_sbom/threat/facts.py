@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from startup_sbom.explain.attribution import FORMULA_VERSION, likelihood_of
 from startup_sbom.models import (
     Activation,
     Consequence,
@@ -265,7 +266,10 @@ _DANGEROUS = frozenset(
 
 def _threat_fact(t: Threat) -> ThreatFact:
     technique = t.attack_techniques[0].id if t.attack_techniques else None
-    like = t.score_factors.get("likelihood", 0.0)
+    if t.explanation is not None and t.explanation.formula_version == FORMULA_VERSION:
+        like = likelihood_of(t.explanation)
+    else:  # legacy (pre-2.1) factor map
+        like = t.score_factors.get("likelihood", 0.0)
     return ThreatFact(
         threat_id=t.id,
         vulnerability=t.vulnerability,
