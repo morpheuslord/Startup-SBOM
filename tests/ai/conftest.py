@@ -1,4 +1,7 @@
-"""Fixtures for the AI-layer tests.  No test ever talks to a real model API."""
+"""Fixtures for the AI-layer tests (all skipped when the 'ai' extra is not installed).
+
+No test ever talks to a real model API.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,8 @@ import sys
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("pydantic_ai")
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "report"))  # reportdata fixture
 sys.path.insert(0, str(Path(__file__).parent))

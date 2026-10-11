@@ -2,8 +2,8 @@ name: Release
 
 # Tag-driven release: `uv version --bump ...`, update CHANGELOG.md, then push a
 # tag `vX.Y.Z` (or `vX.Y.ZrcN` / `vX.Y.ZaN` / `vX.Y.ZbN`) that matches the
-# version in pyproject.toml. The container image is built by container.yml on
-# the same tag.
+# version in pyproject.toml. The container image is built and published by the
+# `image` job in ci.yml on the same tag.
 
 on:
   push:
