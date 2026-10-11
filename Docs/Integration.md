@@ -90,7 +90,7 @@ The public API is one function and one options dataclass, re-exported at the top
 from startup_sbom import Report, ScanOptions, scan
 
 options = ScanOptions(
-    offline=True,                  # cached intelligence only, no sockets
+    offline=True,  # cached intelligence only, no sockets
     vuln_sources=("osv", "arch"),  # add "nvd" with nvd_api_key for CPE fallback
     language_packages=True,
     integrity_check=False,
