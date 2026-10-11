@@ -9,7 +9,7 @@
 
 minimum_pre_commit_version: "4.4.0"
 default_install_hook_types: [pre-commit, pre-push]
-exclude: ^(tests/fixtures/|Docs/sample_output_images/|SVG/)
+exclude: ^tests/fixtures/
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
