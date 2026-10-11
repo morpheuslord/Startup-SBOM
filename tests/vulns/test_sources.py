@@ -303,6 +303,18 @@ def test_no_sources_and_unknown_source(make_http: MakeHttp, vctx: MakeCtx) -> No
     assert ctx.warnings == ["unknown vulnerability source ignored: bogus"]
 
 
+def test_coverage_records_only_consulted_sources(
+    fake_osv: FakeOsv, make_http: MakeHttp, vctx: MakeCtx
+) -> None:
+    router = Router(api_osv_dev=fake_osv, security_archlinux_org=arch_host)
+    ctx = vctx("Debian:12", vuln_sources=("osv", "arch"))
+    match_vulnerabilities(ctx, [pkg("bash", "5.2-1")], make_http(router))
+    assert ctx.vuln_sources_used == {"osv"}  # no alpm packages: arch was never consulted
+    ctx = vctx(os_id="arch", vuln_sources=("osv", "arch"))
+    match_vulnerabilities(ctx, [pkg("glibc", "2.37-1", ALPM)], make_http(router))
+    assert ctx.vuln_sources_used == {"arch"}
+
+
 def test_arch_offline_without_cache(make_http: MakeHttp, vctx: MakeCtx) -> None:
     def boom(request: httpx.Request) -> httpx.Response:
         raise AssertionError("network used offline")

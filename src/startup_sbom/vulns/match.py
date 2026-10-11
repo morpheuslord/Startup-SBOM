@@ -119,6 +119,7 @@ def match_vulnerabilities(
         pkgs = source.applicable(ctx, packages)
         if not pkgs:
             continue
+        ctx.vuln_sources_used.add(source.name)
         covered.update(p.id for p in pkgs)
         results.extend(_run(ctx, source, pkgs))
     uncovered = [p for p in packages if p.id not in covered]
@@ -126,6 +127,7 @@ def match_vulnerabilities(
         nvd = NvdSource(http, ctx.options.nvd_api_key)
         pkgs = nvd.applicable(ctx, uncovered)
         if pkgs:
+            ctx.vuln_sources_used.add(nvd.name)
             covered.update(p.id for p in pkgs)
             results.extend(_run(ctx, nvd, pkgs))
         uncovered = [p for p in uncovered if p.id not in covered]

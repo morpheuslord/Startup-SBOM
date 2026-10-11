@@ -217,7 +217,7 @@ def _run(
         with stages.stage("Matching vulnerabilities"):
             report.vulnerabilities = vulns.match_vulnerabilities(ctx, report.packages, http)
             coverage.vulnerability_sources = sorted(
-                {s for v in report.vulnerabilities for s in v.sources} | set(opts.vuln_sources)
+                {s for v in report.vulnerabilities for s in v.sources} | ctx.vuln_sources_used
             )
     else:
         ctx.limit("vulnerability matching disabled")

@@ -54,6 +54,9 @@ class ScanContext:
     container: ContainerInfo | None = None
     warnings: list[str] = field(default_factory=list)
     limitations: list[str] = field(default_factory=list)
+    vuln_sources_used: set[str] = field(default_factory=set)
+    """Vulnerability sources that were actually consulted for this target (an enabled
+    source with no applicable packages, e.g. ``arch`` on a Debian system, is absent)."""
 
     def warn(self, message: str) -> None:
         """Record a non-fatal problem; it is logged and included in the report."""
