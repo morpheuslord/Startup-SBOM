@@ -1,10 +1,10 @@
 name: Security
 
 # All static security analysis in one workflow, uploading to code scanning:
-# CodeQL over the Python sources and the workflows themselves, and zizmor
-# over the GitHub Actions workflows and the root composite action (template
-# injection, unpinned actions, excessive permissions, cache poisoning,
-# credential persistence).
+# CodeQL over the Python sources and the workflows themselves, Codacy's
+# security tool suite, and zizmor over the GitHub Actions workflows and the
+# root composite action (template injection, unpinned actions, excessive
+# permissions, cache poisoning, credential persistence).
 
 on:
   push:
@@ -44,6 +44,35 @@ jobs:
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
           category: "/language:${{ matrix.language }}"
+
+  codacy:
+    name: codacy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      security-events: write # SARIF upload to code scanning
+      actions: read # workflow metadata for private repositories
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run Codacy Analysis CLI
+        uses: codacy/codacy-analysis-cli-action@562ee3e92b8e92df8b67e0a5ff8aa8e261919c08 # v4.4.7
+        with:
+          # Optional: with CODACY_PROJECT_TOKEN the repository's Codacy configuration
+          # is used; without it, the tools run with their default configurations.
+          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
+          output: results.sarif
+          format: sarif
+          # Map non-security issue severities so code scanning shows only real findings.
+          gh-code-scanning-compat: true
+          # Never fail here; code scanning owns the pass/fail decision on pull requests.
+          max-allowed-issues: 2147483647
+      - name: Upload Codacy results to code scanning
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: results.sarif
+          category: codacy
 
   zizmor:
     name: zizmor
