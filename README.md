@@ -1,6 +1,20 @@
-# Startup-SBOM
+<p align="center">
+  <img src="https://raw.githubusercontent.com/morpheuslord/Startup-SBOM/main/Docs/assets/logo.svg" alt="Startup-SBOM logo" width="140">
+</p>
 
-**What runs at boot, what it is made of, and how it can be attacked.**
+<h1 align="center">Startup-SBOM</h1>
+
+<p align="center"><strong>What runs at boot, what it is made of, and how it can be attacked.</strong></p>
+
+<p align="center">
+  <a href="https://pypi.org/project/startup-sbom/"><img src="https://img.shields.io/pypi/v/startup-sbom" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/startup-sbom/"><img src="https://img.shields.io/pypi/pyversions/startup-sbom" alt="Python versions"></a>
+  <a href="https://github.com/morpheuslord/Startup-SBOM/actions/workflows/ci.yml"><img src="https://github.com/morpheuslord/Startup-SBOM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://morpheuslord.github.io/Startup-SBOM/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-06b6d4" alt="Documentation"></a>
+  <a href="https://github.com/morpheuslord/Startup-SBOM/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/startup-sbom" alt="License: MIT"></a>
+</p>
+
+<p align="center"><a href="https://morpheuslord.github.io/Startup-SBOM/"><strong>Read the documentation →</strong></a></p>
 
 Startup-SBOM statically analyses a Linux root filesystem, container or image and
 answers three questions most SBOM tools can't:
@@ -34,6 +48,20 @@ extracted or modified, and symlinks can never escape the analysed root.
 uv tool install startup-sbom        # or: pipx install startup-sbom
 uvx startup-sbom --help             # run without installing
 docker run --rm ghcr.io/morpheuslord/startup-sbom --help
+```
+
+The core scanner has no heavy dependencies; optional features are extras:
+
+| Extra | Adds |
+|---|---|
+| `startup-sbom[tui]` | Interactive terminal UI (`startup-sbom tui`) |
+| `startup-sbom[pdf]` | PDF reports (`-f pdf`, Typst; PDF/A-3u + PDF/UA-1 by default) |
+| `startup-sbom[ai]` | AI analysis across multiple LLM providers, DuckDuckGo search, MCP server |
+| `startup-sbom[agents-server]` | A2A and ACP agent servers |
+| `startup-sbom[all]` | Everything above |
+
+```bash
+uv tool install "startup-sbom[all]"
 ```
 
 From source:
@@ -70,7 +98,7 @@ startup-sbom scan oci-archive:img.tar -f sarif --fail-on act
 
 | Option | Meaning |
 |---|---|
-| `-f, --format` | `json`, `cyclonedx`, `spdx`, `sarif`, `openvex`, `cdx-vex`, `markdown`, `html`, `dot`, `mermaid` (repeatable) |
+| `-f, --format` | `json`, `cyclonedx`, `spdx`, `sarif`, `openvex`, `cdx-vex`, `markdown`, `html`, `dot`, `mermaid`, `pdf` (repeatable) |
 | `-o, --output` | Output directory (default `./startup-sbom-out`), or `-` to stream one format to stdout |
 | `--offline` | No network; use cached intelligence only |
 | `--sources` | Vulnerability sources: `osv`, `arch`, `nvd` (opt-in, set `NVD_API_KEY`), or `none` |
@@ -82,10 +110,13 @@ startup-sbom scan oci-archive:img.tar -f sarif --fail-on act
 | `--platform` | Select a platform from a multi-arch image, e.g. `linux/arm64` |
 | `--cdx-spec` | CycloneDX `1.5`, `1.6` (default) or `1.7` |
 | `--fail-on` | `low` … `critical` (vulnerability severity) or `attend` / `act` (SSVC) |
+| `--prefetch-intel` | Fetch advisories, exploit references and articles for the top findings (opt-in, online) |
 | `-q`, `-v`, `--debug` | Quiet / verbose / debug |
 
-Other commands: `startup-sbom db update|status|clear` (cache KEV/EPSS for offline
-use), `startup-sbom schema` (JSON Schema of the native report), `startup-sbom version`.
+Other commands: `startup-sbom tui` (interactive UI), `startup-sbom ai …` (AI analysis
+and agent servers), `startup-sbom intel …` (CVE intelligence lookup),
+`startup-sbom db update|status|clear` (cache KEV/EPSS for offline use),
+`startup-sbom schema` (JSON Schema of the native report), `startup-sbom version`.
 
 Exit codes: `0` success, `1` `--fail-on` threshold reached, `2` usage or target
 error, `3` internal error.
@@ -102,10 +133,35 @@ error, `3` internal error.
 | `markdown` | `report.md` | Pull requests and wikis (Mermaid attack graphs render on GitHub) |
 | `html` | `report.html` | Self-contained interactive report (works offline) |
 | `dot`, `mermaid` | `attack-graph.*` | Attack graph for Graphviz / Mermaid |
+| `pdf` | `report.pdf` | Archival PDF with explanations and charts; the JSON report is attached inside |
 
 VEX is conservative. A vulnerable package with no observed execution path is
 reported as `under_investigation`, not `not_affected`, because "not started at
 boot" is not the same as "unreachable". Opt in with `--vex-unreachable-not-affected`.
+
+## Beyond the scanner
+
+**Explainable results.** Every risk score decomposes exactly into its factors
+(baseline + contributions = total), every SSVC decision carries its decision path
+and the flips that would change it, and the report proposes a minimal fix plan
+that breaks every attack chain. The console, HTML, Markdown and PDF outputs render
+these as charts and graphs.
+
+**Interactive TUI.** `startup-sbom tui` walks through target selection, scan
+settings, a live scan and an eight-tab results browser with search, filters,
+explanations, intel articles and export.
+
+**Intel prefetch.** `--prefetch-intel` gathers vendor advisories, exploit and PoC
+references and readable articles for the highest-risk findings, over an
+SSRF-hardened fetcher. Public exploitation evidence can raise a threat's priority,
+never lower it.
+
+**AI analysis.** `startup-sbom ai analyze report.json` runs grounded agents over a
+report on your choice of LLM provider (Anthropic, OpenAI, Google, Groq, Mistral,
+OpenRouter, Ollama) with `--provider`, `--model` or `--profile cheap|balanced|quality`,
+optional DuckDuckGo search and a cost ceiling. Claims the report doesn't support
+are flagged. The same analysis is available over MCP (Model Context Protocol) and as
+A2A / ACP (Agent Communication Protocol) agent servers.
 
 ## Integrations
 
@@ -164,7 +220,7 @@ explicitly under coverage limitations. It never returns a silent "0 vulnerabilit
   verification. `--offline` disables it entirely.
 * Container environment variable values are never recorded.
 
-See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
+See [SECURITY.md](https://github.com/morpheuslord/Startup-SBOM/blob/main/SECURITY.md) for reporting vulnerabilities.
 
 ## Upgrading from 1.x
 
@@ -172,14 +228,14 @@ See [SECURITY.md](SECURITY.md) for reporting vulnerabilities.
 flags. The old `chroot` mode has been removed: it bind-mounted the target over the
 host's `/usr`, `/bin` and `/lib` and ran target binaries as root. Capture
 `systemd-analyze plot > boot.svg` on the target and pass `--boot-timing boot.svg`
-instead. See [Docs/Refactor Plan.md](Docs/Refactor%20Plan.md) for every change.
+instead. See the [refactor plan](https://github.com/morpheuslord/Startup-SBOM/blob/main/Docs/Refactor%20Plan.md) for every change.
 
 ## Citation
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.19307312.svg)](https://doi.org/10.5281/zenodo.19307312)
-See [CITATION.cff](CITATION.cff).
+See [CITATION.cff](https://github.com/morpheuslord/Startup-SBOM/blob/main/CITATION.cff).
 
 ## License
 
 MIT. Bundled MITRE CWE/CAPEC/ATT&CK-derived data and CTID mappings are
-redistributed under their own terms; see `src/startup_sbom/data/NOTICE.md`.
+redistributed under their own terms; see [NOTICE.md](https://github.com/morpheuslord/Startup-SBOM/blob/main/src/startup_sbom/data/NOTICE.md).

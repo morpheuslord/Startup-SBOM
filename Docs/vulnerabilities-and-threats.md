@@ -1,6 +1,6 @@
 # Vulnerabilities and Threats
 
-This page covers the two halves of the security analysis: **matching** — which advisories apply to the installed packages — and **reversal** — what each match means for *this* system, culminating in ranked attack chains and supply-chain findings. Matching lives in `src/startup_sbom/vulns/`, reversal in `src/startup_sbom/threat/`, and supply-chain analysis in `src/startup_sbom/supplychain/`. All of it reads only the report and bundled data files; the optional online layer is described in [Intelligence and AI](Intelligence%20and%20AI.md).
+This page covers the two halves of the security analysis: **matching** — which advisories apply to the installed packages — and **reversal** — what each match means for *this* system, culminating in ranked attack chains and supply-chain findings. Matching lives in `src/startup_sbom/vulns/`, reversal in `src/startup_sbom/threat/`, and supply-chain analysis in `src/startup_sbom/supplychain/`. All of it reads only the report and bundled data files; the optional online layer is described in [Intelligence and AI](intelligence-and-ai.md).
 
 ## Vulnerability sources
 
@@ -34,7 +34,7 @@ Records from all sources are normalised (`vulns/normalize.py`) — CVE identity 
 * **CWE consequences** (`cwe.py`) — consequence classes (code execution, privilege escalation, authentication bypass, information disclosure, tampering, DoS, supply-chain compromise) come from MITRE's *Common Consequences* data (bundled `cwe.json`), inherited from `ChildOf` ancestors in the CWE-1000 research view when the weakness lists none; the CVSS impact metrics disambiguate memory-corruption weaknesses between code execution and crashes.
 * **ATT&CK** (`attack.py`) — technique mapping in priority order: CTID per-CVE mappings (KEV set + `attack_to_cve`), the CTID methodology vulnerability-type table joined to CWE, CWE → CAPEC → ATT&CK taxonomy links (capped), and finally a context-derived generic exploitation technique (T1190, T1210, T1068, T1203, T1211, T1212).
 * **STRIDE** — each threat is tagged with its STRIDE categories, derived from the consequence classes and the CVSS vector facts.
-* **SSVC** (`ssvc.py`) — the CISA Coordinator tree v2.0.3 (CERT/CC tables, Apache-2.0) decides Track / Track\* / Attend / Act from exploitation, automatability, technical impact and — since *Mission & Well-Being* cannot be observed in a root filesystem — the scan's observed *System Exposure* (`small`/`controlled`/`open`) as the situated proxy. The BOD 26-04 deployer timeline tree is evaluated as well; both decision paths are recorded as traces with exact flip conditions ([Intelligence and AI](Intelligence%20and%20AI.md#the-explainable-ai-layer) describes the traces).
+* **SSVC** (`ssvc.py`) — the CISA Coordinator tree v2.0.3 (CERT/CC tables, Apache-2.0) decides Track / Track\* / Attend / Act from exploitation, automatability, technical impact and — since *Mission & Well-Being* cannot be observed in a root filesystem — the scan's observed *System Exposure* (`small`/`controlled`/`open`) as the situated proxy. The BOD 26-04 deployer timeline tree is evaluated as well; both decision paths are recorded as traces with exact flip conditions ([Intelligence and AI](intelligence-and-ai.md#the-explainable-ai-layer) describes the traces).
 * **Transparent risk score** (`scoring.py`, formula `risk/1`):
 
   ```text
@@ -70,7 +70,7 @@ Each threat also carries a plain-English narrative, a remediation (the fixed ver
 | R11 | Persistence establishment |
 | R12 | Hardening that prunes an edge or downgrades its likelihood (multiplicative) |
 
-`threat/chains.py` takes the fixpoint of these edges from each entry state, enumerates the simple paths to the strongest reachable goal (pure Python, no graph library) and scores each chain as `100 · Π p_step · goal impact` (formula `chain/1`), exactly decomposed by LMDI into the chain's explanation. Chains are ranked, capped at `ScanOptions.max_chains` (default 25), given an SSVC decision and a step-by-step narrative, and rendered as graphs in several formats ([Outputs](Outputs.md)).
+`threat/chains.py` takes the fixpoint of these edges from each entry state, enumerates the simple paths to the strongest reachable goal (pure Python, no graph library) and scores each chain as `100 · Π p_step · goal impact` (formula `chain/1`), exactly decomposed by LMDI into the chain's explanation. Chains are ranked, capped at `ScanOptions.max_chains` (default 25), given an SSVC decision and a step-by-step narrative, and rendered as graphs in several formats ([Outputs](outputs.md)).
 
 ## Supply-chain analysis
 

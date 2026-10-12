@@ -1,6 +1,6 @@
 # Package Databases
 
-Startup-SBOM reads OS package databases with pure-Python, read-only parsers — no `dpkg`, `rpm`, `apk` or `pacman` binary is ever executed, so any database can be read on any host OS. `pkgdb.read_all()` probes every supported database (an image can legitimately carry more than one), returns records with globally unique `Package.id` values, and feeds the file-ownership index that the rest of the analysis depends on. Language-ecosystem packages embedded in the image are inventoried separately by `langpkgs`. Everything here is read through the root-confined VFS described in [Architecture](Architecture.md).
+Startup-SBOM reads OS package databases with pure-Python, read-only parsers — no `dpkg`, `rpm`, `apk` or `pacman` binary is ever executed, so any database can be read on any host OS. `pkgdb.read_all()` probes every supported database (an image can legitimately carry more than one), returns records with globally unique `Package.id` values, and feeds the file-ownership index that the rest of the analysis depends on. Language-ecosystem packages embedded in the image are inventoried separately by `langpkgs`. Everything here is read through the root-confined VFS described in [Architecture](architecture.md).
 
 ## dpkg (Debian, Ubuntu and derivatives)
 
@@ -57,4 +57,4 @@ When the same purl is found at several locations, each `Package.id` gets a `file
 * `distro=<ID>-<VERSION_ID>` (just `<ID>` for rolling distros) and `upstream=<source>[@<version>]` qualifiers are added;
 * qualifiers are sorted and percent-encoded by `packageurl-python`.
 
-The purl is normally the stable `Package.id` and the bom-ref used across every output format ([Outputs](Outputs.md)); it is also what vulnerability sources are queried with ([Vulnerabilities and Threats](Vulnerabilities%20and%20Threats.md)).
+The purl is normally the stable `Package.id` and the bom-ref used across every output format ([Outputs](outputs.md)); it is also what vulnerability sources are queried with ([Vulnerabilities and Threats](vulnerabilities-and-threats.md)).

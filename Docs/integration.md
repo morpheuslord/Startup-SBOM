@@ -1,6 +1,6 @@
 # Integration
 
-Startup-SBOM is designed to slot into pipelines: a plain Python package with stable exit codes, a container image, a composite GitHub Action, pre-commit hooks, a library API and a published JSON Schema. This page collects the supported integration paths; the output formats they produce are described in [Outputs](Outputs.md).
+Startup-SBOM is designed to slot into pipelines: a plain Python package with stable exit codes, a container image, a composite GitHub Action, pre-commit hooks, a library API and a published JSON Schema. This page collects the supported integration paths; the output formats they produce are described in [Outputs](outputs.md).
 
 ## Installing
 
@@ -124,4 +124,4 @@ The exit-code policy is available programmatically as `startup_sbom.cli.policy_v
 startup-sbom schema > report.schema.json
 ```
 
-prints the JSON Schema of the native report (`Report`, versioned via `metadata.schema_version`, currently `2.1`). The models forbid unknown fields, so any `report.json` produced by the tool validates against the schema of its version — use it to pin consumers, generate typed clients, or validate archived reports. See [Architecture](Architecture.md) for the model itself and [Outputs](Outputs.md) for the native format.
+prints the JSON Schema of the native report (`Report`, versioned via `metadata.schema_version`, currently `2.1`). The models forbid unknown fields, so any `report.json` produced by the tool validates against the schema of its version — use it to pin consumers, generate typed clients, or validate archived reports. See [Architecture](architecture.md) for the model itself and [Outputs](outputs.md) for the native format.

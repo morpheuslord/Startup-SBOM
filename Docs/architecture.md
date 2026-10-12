@@ -27,19 +27,19 @@ A finalisation pass sorts every list canonically (so output is independent of an
 |---|---|
 | `rootfs/` | Read-only, root-confined VFS: directory-backed and (layered) tar-backed implementations, file-capability decoding |
 | `sources/` | Target parsing and acquisition: directories, the live host, tarballs, docker-archives, OCI layouts/archives, live engine containers and images; compression sniffing and the byte-budgeted workspace; hostile-input validation |
-| `pkgdb/` | dpkg, rpm (sqlite/BDB/NDB), apk and alpm readers plus the path → owning-package index — see [Package Databases](Package%20Databases.md) |
-| `initsys/` | systemd, SysV, OpenRC, runit, s6, supervisord, inittab and container-entrypoint analysers — see [Init Systems](Init%20Systems.md) |
+| `pkgdb/` | dpkg, rpm (sqlite/BDB/NDB), apk and alpm readers plus the path → owning-package index — see [Package Databases](package-databases.md) |
+| `initsys/` | systemd, SysV, OpenRC, runit, s6, supervisord, inittab and container-entrypoint analysers — see [Init Systems](init-systems.md) |
 | `binaries/` | Bounds-checked ELF reader, dynamic-loader emulation (glibc and musl search order), shebang parsing, privileged/unmanaged executable sweep |
 | `langpkgs/` | Embedded language ecosystems: Python, npm, Go buildinfo, Java (Maven metadata), Rust (cargo-auditable) |
-| `vulns/` | OSV, Arch tracker and opt-in NVD matching; EPSS/KEV enrichment; native version comparators — see [Vulnerabilities and Threats](Vulnerabilities%20and%20Threats.md) |
+| `vulns/` | OSV, Arch tracker and opt-in NVD matching; EPSS/KEV enrichment; native version comparators — see [Vulnerabilities and Threats](vulnerabilities-and-threats.md) |
 | `supplychain/` | Repository provenance, vendor attribution, integrity checking, EOL lookup, the vendor-chain graph and blast radii |
 | `threat/` | Threat reversal (reachability, CVSS, CWE, ATT&CK, STRIDE, SSVC, scoring) and the R1–R12 attack-chain engine |
-| `intel/` | Opt-in online intelligence prefetch with the SSRF-hardened `SafeFetcher` — see [Intelligence and AI](Intelligence%20and%20AI.md) |
+| `intel/` | Opt-in online intelligence prefetch with the SSRF-hardened `SafeFetcher` — see [Intelligence and AI](intelligence-and-ai.md) |
 | `explain/` | Explainable-AI layer: provenance store, exact risk attribution, SSVC traces, counterfactual fix plans, global drivers |
 | `viz/` | Deterministic visualisations: rich terminal renderables and dependency-free SVG charts |
 | `ai/` | Agentic AI analysis over a finished report: providers, agents, grounding, MCP/A2A/ACP servers |
 | `tui/` | Textual terminal UI (optional extra) |
-| `report/` | Every output format — see [Outputs](Outputs.md) |
+| `report/` | Every output format — see [Outputs](outputs.md) |
 | `models.py` | The pydantic report model (the contract) |
 | `net.py`, `textsafe.py`, `lz4frame.py` | Hardened HTTP, untrusted-text sanitisation, bounded LZ4 frame decoding |
 
@@ -66,6 +66,6 @@ The target and everything fetched about it are treated as hostile input end to e
 * **No extraction** (`rootfs/tar.py`, `sources/`): tar targets are indexed header-only, layers are flattened with OCI whiteout rules, and compressed data is decompressed once into a `tempfile.mkdtemp()` workspace where every byte written is charged against a budget, so decompression bombs fail fast. `tarfile.TarFile.extractall` is lint-banned project-wide.
 * **Bounded decompressors**: gzip/xz/bzip2/zstd streams are capped, and `lz4frame.py` provides a pure-Python, strictly bounds-checked LZ4 *frame* decoder (used for Ubuntu's `.lz4` apt indexes) with an output cap, preferring the C extension when present.
 * **Hostile-format parsers**: the ELF reader, the rpm header/BDB/NDB parsers, the OCI JSON readers and the boot-timing SVG reader all validate every offset, size, count and digest, cap input sizes, and parse attacker-controlled names only as keys into their own member maps.
-* **SSRF-hardened networking** (`net.py`): HTTPS only, to an explicit host allow-list (path-prefix-restricted for shared hosts such as `raw.githubusercontent.com`); TLS verification is never disabled; timeouts and bounded retries everywhere; secret headers (`NVD_API_KEY`, `GITHUB_TOKEN`) are bound to single hosts and never logged; `--offline` means no socket is ever opened. Arbitrary advisory-reference URLs go through the even stricter `SafeFetcher` ([Intelligence and AI](Intelligence%20and%20AI.md)).
+* **SSRF-hardened networking** (`net.py`): HTTPS only, to an explicit host allow-list (path-prefix-restricted for shared hosts such as `raw.githubusercontent.com`); TLS verification is never disabled; timeouts and bounded retries everywhere; secret headers (`NVD_API_KEY`, `GITHUB_TOKEN`) are bound to single hosts and never logged; `--offline` means no socket is ever opened. Arbitrary advisory-reference URLs go through the even stricter `SafeFetcher` ([Intelligence and AI](intelligence-and-ai.md)).
 * **Text sanitisation** (`textsafe.py`): every string from a scanned system, advisory or fetched article is stripped of terminal escape sequences, bidi overrides, zero-width characters and private-use code points before it reaches a terminal, the TUI, a document or an LLM — escaping markup alone is not enough, since `rich.text.Text` passes `ESC` straight through.
 * **Subprocess discipline** (`sources/engine.py`): engine CLIs are located with `shutil.which`, called with argv lists only (no shell), `--` before every user operand, stdin `/dev/null`, timeouts and checked exit codes; container references are validated against strict grammars before any call, and container environment *values* are never recorded (only key names, with secret-looking keys flagged).

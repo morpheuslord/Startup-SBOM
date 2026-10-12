@@ -18,8 +18,7 @@ Please **do not open a public issue** for security problems.
 
 1. **Preferred:** GitHub private vulnerability reporting:
    [Security → Report a vulnerability](https://github.com/morpheuslord/Startup-SBOM/security/advisories/new).
-2. Alternatively, email [chiranjeevi.naidu@proton.me](mailto:chiranjeevi.naidu@proton.me)
-   or [morpheuslord@protonmail.com](mailto:morpheuslord@protonmail.com).
+2. Alternatively, email [chiranjeevi.naidu@proton.me](mailto:chiranjeevi.naidu@proton.me).
 
 Please include:
 

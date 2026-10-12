@@ -9,7 +9,8 @@ description = "Root-confined static analysis of Linux root filesystems and conta
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-authors = [{ name = "morpheuslord" }, { name = "Chiranjeevi G" }]
+authors = [{ name = "morpheuslord", email = "chiranjeevi.naidu@proton.me" }]
+maintainers = [{ name = "morpheuslord", email = "chiranjeevi.naidu@proton.me" }]
 requires-python = ">=3.11"
 keywords = [
   "sbom", "cyclonedx", "spdx", "sarif", "vex", "systemd", "container", "oci",
@@ -62,9 +63,11 @@ startup-sbom = "startup_sbom.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/morpheuslord/Startup-SBOM"
-Source = "https://github.com/morpheuslord/Startup-SBOM"
+Documentation = "https://morpheuslord.github.io/Startup-SBOM/"
+Repository = "https://github.com/morpheuslord/Startup-SBOM"
 Issues = "https://github.com/morpheuslord/Startup-SBOM/issues"
 Changelog = "https://github.com/morpheuslord/Startup-SBOM/blob/main/CHANGELOG.md"
+Security = "https://github.com/morpheuslord/Startup-SBOM/blob/main/SECURITY.md"
 
 [dependency-groups]
 test = [
@@ -76,6 +79,7 @@ test = [
   "cyclonedx-python-lib[json-validation]>=11,<12",
 ]
 lint = ["ruff>=0.17", "mypy>=2.4"]
+docs = ["mkdocs-material>=9.6,<10"]
 dev = [{ include-group = "test" }, { include-group = "lint" }, "pre-commit>=4.6"]
 
 [tool.uv]

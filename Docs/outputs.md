@@ -1,6 +1,6 @@
 # Outputs
 
-Every output format renders from the same canonicalised `Report` model ([Architecture](Architecture.md)), so SBOMs, SARIF, VEX documents and human reports always agree on severity, reachability and identifiers. Formats are selected with repeatable `-f/--format` flags; `-o DIR` chooses the output directory (default `./startup-sbom-out`) and `-o -` streams exactly one format to stdout (including binary PDF). The renderer code lives in `src/startup_sbom/report/`.
+Every output format renders from the same canonicalised `Report` model ([Architecture](architecture.md)), so SBOMs, SARIF, VEX documents and human reports always agree on severity, reachability and identifiers. Formats are selected with repeatable `-f/--format` flags; `-o DIR` chooses the output directory (default `./startup-sbom-out`) and `-o -` streams exactly one format to stdout (including binary PDF). The renderer code lives in `src/startup_sbom/report/`.
 
 ## Formats
 
@@ -64,4 +64,4 @@ Exit codes are stable and designed for CI:
 * **Severity** — `low`, `medium`, `high`, `critical`: exit 1 when any *active* vulnerability (status `affected`, `no_fix_available` or `under_investigation` — fixed and not-affected ones never trigger) reaches the level.
 * **SSVC decision** — `attend` or `act`: exit 1 when any threat's SSVC decision is Act (or Attend, for `--fail-on attend`). This gates on *contextual* urgency rather than raw severity: a critical CVE in an unreachable package will not fail the build, while a medium one in a network-exposed root service may.
 
-Reports are always written before the policy gate is applied, so CI artefacts (and the SARIF upload in the [GitHub Action](Integration.md)) survive a failing gate.
+Reports are always written before the policy gate is applied, so CI artefacts (and the SARIF upload in the [GitHub Action](integration.md)) survive a failing gate.

@@ -1,0 +1,106 @@
+# MkDocs Material configuration for https://morpheuslord.github.io/Startup-SBOM/
+#
+# The content lives in `Docs/` (capital D, on purpose): the repository once
+# broke on case-insensitive filesystems when a lowercase `docs/` appeared next
+# to it, so a lowercase `docs/` directory must never be created again.
+
+site_name: Startup-SBOM
+site_url: https://morpheuslord.github.io/Startup-SBOM/
+site_description: >-
+  Root-confined static analysis of Linux root filesystems and container
+  images: map what runs at boot to its packages, reverse vulnerabilities into
+  concrete threats, chain attacks and trace supply-chain blast radius.
+site_author: morpheuslord
+
+repo_url: https://github.com/morpheuslord/Startup-SBOM
+repo_name: morpheuslord/Startup-SBOM
+edit_uri: edit/main/Docs/
+
+docs_dir: Docs
+
+# Internal planning document, deliberately kept out of the navigation.
+not_in_nav: |
+  Refactor Plan.md
+
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn
+
+nav:
+  - Home: index.md
+  - Introduction: introduction.md
+  - Architecture: architecture.md
+  - Analysis:
+      - Package Databases: package-databases.md
+      - Init Systems: init-systems.md
+      - Vulnerabilities and Threats: vulnerabilities-and-threats.md
+  - Outputs: outputs.md
+  - Intelligence and AI: intelligence-and-ai.md
+  - Integration: integration.md
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/favicon.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+    # Dark by default: it is a security tool.
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: blue grey
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+
+plugins:
+  - search
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/morpheuslord/Startup-SBOM
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/startup-sbom/
+    - icon: fontawesome/brands/docker
+      link: https://github.com/morpheuslord/Startup-SBOM/pkgs/container/startup-sbom
+
+copyright: Copyright &copy; morpheuslord — MIT License
