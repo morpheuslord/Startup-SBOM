@@ -10,7 +10,7 @@ The release workflow copies the section whose heading matches the pushed tag
 
 ## [Unreleased]
 
-## [2.0.0] - Unreleased
+## [2.0.0] - 2026-10-12
 
 A ground-up rewrite. Startup-SBOM is now a root-confined static analyser that
 never executes, mounts or writes into the system it inspects. See
@@ -18,12 +18,15 @@ never executes, mounts or writes into the system it inspects. See
 
 ### Added
 
-- New `startup-sbom` CLI (Typer): `scan`, `db update|status|clear`, `schema`, `version`.
+- New `startup-sbom` CLI (Typer): `scan`, `db update|status|clear`, `schema`, `version`,
+  `tui`, `intel` and `ai`.
 - Explicit target schemes: `dir:`, `host:`, `tar:`, `docker-archive:`, `oci-dir:`,
   `oci-archive:`, `docker:`, `podman:`, `nerdctl:` (an existing bare path is auto-detected).
 - Output formats: native JSON (with a published JSON Schema), CycloneDX 1.5/1.6/1.7,
   SPDX 2.3, SARIF 2.1.0, OpenVEX, CycloneDX VEX, Markdown, self-contained HTML,
-  Graphviz DOT and Mermaid attack graphs, written atomically into one output directory.
+  Graphviz DOT and Mermaid attack graphs, written atomically into one output directory;
+  PDF reports via Typst (`-f pdf`, `pdf` extra), PDF/A-3u + PDF/UA-1 by default with the
+  JSON report attached.
 - Package databases: dpkg (including distroless `status.d`), RPM (sqlite, Berkeley DB,
   NDB; pure Python), apk, alpm; exact, usr-merge-aware file ownership index.
 - Init systems: systemd (search paths, drop-ins, masks, templates, sockets, boot graph,
@@ -36,15 +39,29 @@ never executes, mounts or writes into the system it inspects. See
   end-of-life data; offline mode backed by a local cache (`startup-sbom db`).
 - Threat reversal (pre/post-conditions, reachability, ATT&CK, SSVC, risk score),
   chained attack-path graph and supply-chain blast-radius analysis.
+- Explainable results: exact additive risk explanations (baseline + contributions =
+  total), SSVC decision traces with counterfactual flips, minimal fix plans that break
+  every attack chain, and system-wide risk drivers, rendered as terminal charts and
+  SVG in the console, HTML, Markdown and PDF outputs.
+- Interactive terminal UI (`startup-sbom tui`, `tui` extra): target picker, scan
+  settings, live scan progress with cancellation, and a results browser.
+- Opt-in online intel prefetch (`--prefetch-intel`): vendor advisories, exploit and PoC
+  references and articles for the highest-risk findings, through an SSRF-hardened
+  fetcher; public exploitation evidence can only raise a threat's priority.
+- AI analysis (`startup-sbom ai`, `ai` extra) on Anthropic, OpenAI, Google, Groq,
+  Mistral, OpenRouter or Ollama, with cost ceilings, optional DuckDuckGo search and
+  grounding checks that flag claims the report does not support; served over MCP and
+  as A2A / ACP agent endpoints (`agents-server` extra).
 - `--fail-on` gate with documented exit codes (0 ok, 1 threshold reached,
   2 usage/target error, 3 internal error).
 - Distribution: PyPI package (`uvx startup-sbom`), multi-arch non-root container image
   `ghcr.io/morpheuslord/startup-sbom`, composite GitHub Action with SARIF upload, and
   pre-commit hooks (`startup-sbom`, `startup-sbom-offline`).
 - Supply-chain hardening of the project itself: `uv.lock`, SHA-pinned actions, zizmor,
-  CodeQL, Dependabot (uv, actions, docker, pre-commit), PyPI Trusted Publishing with
+  CodeQL, Codacy, Dependabot (uv, actions, docker, pre-commit, npm), PyPI Trusted Publishing with
   PEP 740 attestations, GitHub build-provenance attestations, image SBOM/provenance,
   and a CycloneDX SBOM of the tool's own dependencies attached to each release.
+- Documentation site (MkDocs Material) at https://morpheuslord.github.io/Startup-SBOM/.
 
 ### Changed
 
@@ -54,6 +71,9 @@ never executes, mounts or writes into the system it inspects. See
   arch and epoch qualifiers, unique bom-refs, OS component, dependency graph,
   services and vulnerabilities.
 - Output ordering is canonical, so repeated scans produce identical reports.
+- Reports are written owner-only (0600), since they describe a system's weaknesses.
+- `dir:` targets on a Windows host warn that NTFS cannot store POSIX permission bits, so
+  executable, setuid and capability findings are incomplete; scan an archive instead.
 
 ### Removed
 
