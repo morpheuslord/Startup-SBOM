@@ -88,7 +88,10 @@ jobs:
       # when an extra cannot be installed (e.g. the experimental Python).
       - run: uv sync --locked --all-extras || uv sync --locked
       - name: pytest
-        run: uv run --locked pytest -m "not network" --cov --cov-report=term --cov-report=xml
+        run: uv run --locked pytest -m "not network" --cov --cov-report=term --cov-report=xml --junitxml=junit.xml
+      - name: Annotate failed tests
+        if: failure() && hashFiles('junit.xml') != ''
+        run: uv run --locked --no-sync python .github/scripts/annotate_junit.py junit.xml
 
   build:
     name: build + wheel smoke test

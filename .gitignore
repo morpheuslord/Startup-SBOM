@@ -33,3 +33,4 @@ Thumbs.db
 
 # MkDocs build output
 site/
+junit.xml
