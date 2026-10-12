@@ -31,7 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, actions]
+        language: [python, javascript-typescript, actions]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -56,18 +56,31 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Run Codacy Analysis CLI
-        uses: codacy/codacy-analysis-cli-action@562ee3e92b8e92df8b67e0a5ff8aa8e261919c08 # v4.4.7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          # Optional: with CODACY_PROJECT_TOKEN the repository's Codacy configuration
-          # is used; without it, the tools run with their default configurations.
-          project-token: ${{ secrets.CODACY_PROJECT_TOKEN }}
-          output: results.sarif
-          format: sarif
-          # Map non-security issue severities so code scanning shows only real findings.
-          gh-code-scanning-compat: true
-          # Never fail here; code scanning owns the pass/fail decision on pull requests.
-          max-allowed-issues: 2147483647
+          node-version: "22"
+      # The current Codacy Analysis CLI: `init --auto` detects the stack and selects
+      # rules without a project token (the legacy docker CLI ran every tool unconfigured).
+      - name: Install the Codacy Analysis CLI (pinned by .github/codacy/package-lock.json)
+        run: |
+          npm ci --prefix .github/codacy --ignore-scripts --no-fund --no-audit
+          echo "$GITHUB_WORKSPACE/.github/codacy/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Select rules for this repository's stack
+        run: codacy-analysis init --auto --no-update-notifier
+      # Security analyzers only. Bandit is left out because ruff's flake8-bandit rules
+      # already enforce it in CI (with reviewed suppressions); JavaScript is covered by
+      # CodeQL above.
+      - name: Run the security analyzers
+        run: |
+          set +e
+          codacy-analysis analyze . --install-dependencies --no-log --no-update-notifier \
+            --parallel-tools 4 --tool Semgrep --tool Trivy --tool Checkov --tool Hadolint \
+            --output-format sarif --output results.sarif
+          rc=$?
+          set -e
+          echo "codacy-analysis exited with $rc (1 = issues found)"
+          # Findings never fail the job here: code scanning owns that decision on PRs.
+          test -s results.sarif
       # Codacy writes one SARIF run per tool; code scanning needs one category per run.
       - name: Give each Codacy tool its own code-scanning category
         run: python3 .github/scripts/split_sarif_categories.py results.sarif codacy.sarif codacy

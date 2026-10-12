@@ -50,6 +50,19 @@ updates:
       base-images:
         patterns: ["*"]
 
+  - package-ecosystem: "npm" # the pinned Codacy Analysis CLI used by security.yml
+    directory: "/.github/codacy"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: "ci"
+    groups:
+      codacy-cli:
+        patterns: ["*"]
+
   - package-ecosystem: "pre-commit" # .pre-commit-config.yaml revs
     directory: "/"
     schedule:

@@ -34,3 +34,5 @@ Thumbs.db
 # MkDocs build output
 site/
 junit.xml
+.github/codacy/node_modules/
+.codacy/

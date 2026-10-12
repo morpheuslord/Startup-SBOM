@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Pinned Codacy Analysis CLI for the codacy job in .github/workflows/security.yml",
+  "dependencies": {
+    "@codacy/analysis-cli": "0.24.0"
+  }
+}
