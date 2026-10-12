@@ -982,7 +982,8 @@ def parse_pgp_keys(data: bytes, source: str) -> list[SigningKey]:
         if tag in (6, 14) and body:
             version = body[0]
             if version == 4:
-                fp = hashlib.sha1(
+                # SHA-1 is mandated by the OpenPGP v4 fingerprint format (RFC 4880 12.2).
+                fp = hashlib.sha1(  # nosemgrep
                     b"\x99" + struct.pack(">H", len(body)) + body, usedforsecurity=False
                 ).hexdigest()
                 key = SigningKey(key_id=fp[-16:], fingerprint=fp, source=source)
@@ -1301,7 +1302,8 @@ def _apk(ctx: ScanContext, pkgs: list[Package], out: RepoAnalysis, _all: list[Pa
         for arch in archs:
             idx = f"{url.rstrip('/')}/{arch}/APKINDEX.tar.gz".encode()
             for h in (
-                hashlib.sha1(idx, usedforsecurity=False).hexdigest(),
+                # apk names its index cache after the SHA-1 of the URL; not a security use.
+                hashlib.sha1(idx, usedforsecurity=False).hexdigest(),  # nosemgrep
                 hashlib.sha256(idx).hexdigest(),
             ):
                 hash_to_repo[h[:8]] = _strip_scheme(url)

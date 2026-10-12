@@ -291,7 +291,7 @@ def build_cve_attack(src: Path, known: set[str]) -> None:
 
 def build_capec(src: Path, known: set[str]) -> None:
     """``{"cwe": {id: [techniques]}}`` from CAPEC's CWE and ATT&CK taxonomy links."""
-    root = ET.parse(src / "capec_latest.xml").getroot()  # noqa: S314 - trusted MITRE XML
+    root = ET.parse(src / "capec_latest.xml").getroot()  # noqa: S314  # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse - trusted MITRE XML
     by_cwe: dict[str, set[str]] = {}
     for ap in root.iter(f"{CAPEC_NS}Attack_Pattern"):
         if ap.get("Status") in ("Deprecated", "Obsolete"):

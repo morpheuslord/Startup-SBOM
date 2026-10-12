@@ -1,6 +1,8 @@
 (function () {
   'use strict';
   var SVGNS = 'http://www.w3.org/2000/svg';
+  // Lookup tables keyed by report-derived ids use Object.create(null): no prototype,
+  // so an id such as "__proto__" is just another key.
   var data = JSON.parse(document.getElementById('ssbom-data').textContent);
 
   function each(list, fn) { Array.prototype.forEach.call(list, fn); }
@@ -71,9 +73,9 @@
   };
 
   function layout(nodes, edges) {
-    var rank = {}, ids = nodes.map(function (n) { return n.id; });
+    var rank = Object.create(null), ids = nodes.map(function (n) { return n.id; });
     ids.forEach(function (id) { rank[id] = 0; });
-    var incoming = {};
+    var incoming = Object.create(null);
     edges.forEach(function (e) { incoming[e.target] = (incoming[e.target] || 0) + 1; });
     for (var pass = 0; pass < ids.length; pass++) {
       var changed = false;
@@ -85,9 +87,9 @@
       });
       if (!changed) { break; }
     }
-    var cols = {};
+    var cols = Object.create(null);
     nodes.forEach(function (n) { (cols[rank[n.id]] = cols[rank[n.id]] || []).push(n); });
-    var pos = {}, W = 180, H = 34, GX = 150, GY = 40, TOP = 70, maxRow = 0, maxCol = 0;
+    var pos = Object.create(null), W = 180, H = 34, GX = 150, GY = 40, TOP = 70, maxRow = 0, maxCol = 0;
     Object.keys(cols).forEach(function (c) {
       cols[c].sort(function (a, b) { return a.label < b.label ? -1 : a.label > b.label ? 1 : 0; });
       cols[c].forEach(function (n, i) {
@@ -134,7 +136,7 @@
     box.textContent = '';
     detail.textContent = 'Select a node or an edge for details.';
     if (!nodes.length) { box.appendChild(el('p', 'small', 'No data for this view.')); return; }
-    var byId = {};
+    var byId = Object.create(null);
     nodes.forEach(function (n) { byId[n.id] = n; });
     var L = layout(nodes, edges);
     var root = svg('svg', { width: L.width, height: L.height, viewBox: '0 0 ' + L.width + ' ' + L.height,
@@ -145,7 +147,7 @@
     marker.appendChild(svg('path', { d: 'M0,0L10,5L0,10z', 'class': 'arrow' }));
     defs.appendChild(marker);
     root.appendChild(defs);
-    var gEdges = svg('g'), gNodes = svg('g'), edgeEls = [], nodeEls = {};
+    var gEdges = svg('g'), gNodes = svg('g'), edgeEls = [], nodeEls = Object.create(null);
     edges.forEach(function (e) {
       var a = L.pos[e.source], b = L.pos[e.target];
       if (!a || !b) { return; }

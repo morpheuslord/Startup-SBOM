@@ -78,5 +78,8 @@ ENV PATH="/app/.venv/bin:${PATH}" \
 USER 65532:65532
 WORKDIR /work
 
+# A one-shot CLI with no long-running service: there is nothing to probe.
+HEALTHCHECK NONE
+
 ENTRYPOINT ["startup-sbom"]
 CMD ["--help"]

@@ -22,7 +22,7 @@ def _escape_property(value: str) -> str:
 
 
 def main(path: str) -> int:
-    root = ET.parse(path).getroot()  # noqa: S314
+    root = ET.parse(path).getroot()  # noqa: S314  # nosemgrep: python.lang.security.use-defused-xml-parse.use-defused-xml-parse - our own pytest output
     emitted = 0
     for case in root.iter("testcase"):
         problem = case.find("failure")
