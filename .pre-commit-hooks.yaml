@@ -1,0 +1,33 @@
+# Hooks offered to other repositories. Startup-SBOM scans a whole root
+# filesystem / image archive, not individual changed files, so filenames are
+# never passed and the target must be given in `args`. Example:
+#
+#   repos:
+#     - repo: https://github.com/morpheuslord/Startup-SBOM
+#       rev: v2.0.0
+#       hooks:
+#         - id: startup-sbom
+#           args: [dir:rootfs, -f, cyclonedx, -o, sbom-out, --fail-on, high]
+#           files: ^rootfs/
+#
+# Requires Python >= 3.11 for the hook environment.
+
+- id: startup-sbom
+  name: startup-sbom scan
+  description: Scan a root filesystem or image archive in the repository (pass the target and flags via args).
+  entry: startup-sbom scan
+  language: python
+  pass_filenames: false
+  require_serial: true
+  stages: [pre-commit, pre-push, manual]
+  minimum_pre_commit_version: "3.2.0"
+
+- id: startup-sbom-offline
+  name: startup-sbom scan (offline)
+  description: Same as startup-sbom but never opens a network connection; uses the local vulnerability cache only.
+  entry: startup-sbom scan --offline --quiet
+  language: python
+  pass_filenames: false
+  require_serial: true
+  stages: [pre-commit, pre-push, manual]
+  minimum_pre_commit_version: "3.2.0"

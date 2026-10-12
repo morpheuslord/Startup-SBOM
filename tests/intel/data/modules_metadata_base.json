@@ -1,0 +1,31 @@
+{
+  "exploit_linux/local/sudo_baron_samedit": {
+    "name": "Sudo Heap-Based Buffer Overflow",
+    "fullname": "exploit/linux/local/sudo_baron_samedit",
+    "disclosure_date": "2021-01-26",
+    "type": "exploit",
+    "rank": 600,
+    "check": true,
+    "platform": "linux",
+    "references": ["CVE-2021-3156", "URL-https://www.sudo.ws/alerts/unescape_overflow.html"],
+    "notes": {"Reliability": ["repeatable-session"]}
+  },
+  "auxiliary_scanner/http/log4shell_scanner": {
+    "name": "Log4Shell HTTP Scanner",
+    "fullname": "auxiliary/scanner/http/log4shell_scanner",
+    "disclosure_date": "2021-12-09",
+    "type": "auxiliary",
+    "rank": 300,
+    "check": true,
+    "platform": "",
+    "references": ["CVE-2021-44228", "CVE-2021-45046"]
+  },
+  "exploit_multi/no_cve": {
+    "name": "No CVE module",
+    "fullname": "exploit/multi/no_cve",
+    "type": "exploit",
+    "rank": 200,
+    "check": false,
+    "references": ["URL-https://example.org/x"]
+  }
+}

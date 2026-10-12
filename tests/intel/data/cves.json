@@ -1,0 +1,3 @@
+{"ID":"CVE-2021-44228","Info":{"Name":"Apache Log4j2 Remote Code Injection","Severity":"critical","Description":"Apache Log4j2 JNDI features do not protect against attacker controlled LDAP.","Classification":{"CVSSScore":"10"}},"file_path":"http/cves/2021/CVE-2021-44228.yaml"}
+{"ID":"CVE-2024-6387","Info":{"Name":"OpenSSH regreSSHion check","Severity":"high"},"file_path":"javascript/cves/2024/CVE-2024-6387.yaml"}
+{"ID":"not-a-cve","Info":{"Name":"ignored"},"file_path":"x.yaml"}

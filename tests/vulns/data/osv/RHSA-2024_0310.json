@@ -1,0 +1,82 @@
+{
+ "affected": [
+  {
+   "database_specific": {
+    "source": "https://security.access.redhat.com/data/osv/RHSA-2024:0310.json"
+   },
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:9::baseos",
+    "name": "openssl",
+    "purl": "pkg:rpm/redhat/openssl"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-25.el9_3"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  },
+  {
+   "database_specific": {
+    "source": "https://security.access.redhat.com/data/osv/RHSA-2024:0310.json"
+   },
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:9::baseos",
+    "name": "openssl-libs",
+    "purl": "pkg:rpm/redhat/openssl-libs"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-25.el9_3"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  }
+ ],
+ "id": "RHSA-2024:0310",
+ "modified": "2026-08-05T10:17:06Z",
+ "published": "2024-09-16T12:46:54Z",
+ "references": [
+  {
+   "type": "ADVISORY",
+   "url": "https://access.redhat.com/errata/RHSA-2024:0310"
+  },
+  {
+   "type": "ARTICLE",
+   "url": "https://access.redhat.com/security/updates/classification/#moderate"
+  },
+  {
+   "type": "REPORT",
+   "url": "https://bugzilla.redhat.com/show_bug.cgi?id=2243839"
+  },
+  {
+   "type": "ARTICLE",
+   "url": "https://issues.redhat.com/browse/RHEL-15993"
+  }
+ ],
+ "schema_version": "1.8.0",
+ "severity": [
+  {
+   "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N",
+   "type": "CVSS_V3"
+  }
+ ],
+ "summary": "Red Hat Security Advisory: openssl security update",
+ "upstream": [
+  "CVE-2023-5363"
+ ]
+}

@@ -1,0 +1,103 @@
+name: Security
+
+# All static security analysis in one workflow, uploading to code scanning:
+# CodeQL over the Python sources and the workflows themselves, Codacy's
+# security tool suite, and zizmor over the GitHub Actions workflows and the
+# root composite action (template injection, unpinned actions, excessive
+# permissions, cache poisoning, credential persistence).
+
+on:
+  push:
+    branches: [main, refactoring] # drop refactoring after the 2.0 merge
+  pull_request:
+  schedule:
+    - cron: "27 4 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  codeql:
+    name: codeql (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload results to code scanning
+      actions: read # needed for private forks
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [python, javascript-typescript, actions]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          queries: security-extended
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          category: "/language:${{ matrix.language }}"
+
+  codacy:
+    name: codacy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      security-events: write # SARIF upload to code scanning
+      actions: read # workflow metadata for private repositories
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+      # The current Codacy Analysis CLI: `init --auto` detects the stack and selects
+      # rules without a project token (the legacy docker CLI ran every tool unconfigured).
+      - name: Install the Codacy Analysis CLI (pinned by .github/codacy/package-lock.json)
+        run: |
+          npm ci --prefix .github/codacy --ignore-scripts --no-fund --no-audit
+          echo "$GITHUB_WORKSPACE/.github/codacy/node_modules/.bin" >> "$GITHUB_PATH"
+      - name: Select rules for this repository's stack
+        run: codacy-analysis init --auto --no-update-notifier
+      # Security analyzers only. Bandit is left out because ruff's flake8-bandit rules
+      # already enforce it in CI (with reviewed suppressions); JavaScript is covered by
+      # CodeQL above.
+      - name: Run the security analyzers
+        run: |
+          set +e
+          codacy-analysis analyze . --install-dependencies --no-log --no-update-notifier \
+            --parallel-tools 4 --tool Semgrep --tool Trivy --tool Checkov --tool Hadolint \
+            --output-format sarif --output results.sarif
+          rc=$?
+          set -e
+          echo "codacy-analysis exited with $rc (1 = issues found)"
+          # Findings never fail the job here: code scanning owns that decision on PRs.
+          test -s results.sarif
+      # Codacy writes one SARIF run per tool; code scanning needs one category per run.
+      - name: Give each Codacy tool its own code-scanning category
+        run: python3 .github/scripts/split_sarif_categories.py results.sarif codacy.sarif codacy
+      - name: Upload Codacy results to code scanning
+        uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          sarif_file: codacy.sarif
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      security-events: write # SARIF upload to code scanning
+      actions: read # workflow metadata for private repositories
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4

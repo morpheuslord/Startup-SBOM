@@ -1,0 +1,57 @@
+{
+ "affected": [
+  {
+   "database_specific": {
+    "source": "https://storage.googleapis.com/resf-osv-data/RLSA-2024:6783.json"
+   },
+   "package": {
+    "ecosystem": "Rocky Linux:9",
+    "name": "openssl",
+    "purl": "pkg:rpm/rocky-linux/openssl?distro=rocky-linux-9&epoch=1"
+   },
+   "ranges": [
+    {
+     "database_specific": {
+      "yum_repository": "BaseOS"
+     },
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-28.el9_4"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  }
+ ],
+ "credits": [
+  {
+   "name": "Rocky Enterprise Software Foundation"
+  },
+  {
+   "name": "Red Hat"
+  }
+ ],
+ "details": "OpenSSL is a toolkit that implements the Secure Sockets Layer (SSL) and Transport Layer Security (TLS) protocols, as well as a full-strength general-purpose cryptography library.\n\nSecurity Fix(es):\n\n* openssl: Possible denial of service in X.509 name checks (CVE-2024-6119)\n\nFor more details about the security issue(s), including the impact, a CVSS score, acknowledgments, and other related informat",
+ "id": "RLSA-2024:6783",
+ "modified": "2026-02-05T12:15:06.439084Z",
+ "published": "2024-09-30T14:31:38.136782Z",
+ "references": [
+  {
+   "type": "ADVISORY",
+   "url": "https://errata.rockylinux.org/RLSA-2024:6783"
+  },
+  {
+   "type": "REPORT",
+   "url": "https://bugzilla.redhat.com/show_bug.cgi?id=2306158"
+  }
+ ],
+ "schema_version": "1.7.3",
+ "summary": "Moderate: openssl security update",
+ "upstream": [
+  "CVE-2024-6119"
+ ]
+}

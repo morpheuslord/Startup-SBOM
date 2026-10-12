@@ -1,0 +1,105 @@
+{
+ "affected": [
+  {
+   "database_specific": {
+    "source": "https://security.access.redhat.com/data/osv/RHSA-2024:6783.json"
+   },
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:9::appstream",
+    "name": "openssl-devel",
+    "purl": "pkg:rpm/redhat/openssl-devel"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-28.el9_4"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  },
+  {
+   "database_specific": {
+    "source": "https://security.access.redhat.com/data/osv/RHSA-2024:6783.json"
+   },
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:9::baseos",
+    "name": "openssl",
+    "purl": "pkg:rpm/redhat/openssl"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-28.el9_4"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  },
+  {
+   "database_specific": {
+    "source": "https://security.access.redhat.com/data/osv/RHSA-2024:6783.json"
+   },
+   "package": {
+    "ecosystem": "Red Hat:enterprise_linux:9::baseos",
+    "name": "openssl-libs",
+    "purl": "pkg:rpm/redhat/openssl-libs"
+   },
+   "ranges": [
+    {
+     "events": [
+      {
+       "introduced": "0"
+      },
+      {
+       "fixed": "1:3.0.7-28.el9_4"
+      }
+     ],
+     "type": "ECOSYSTEM"
+    }
+   ]
+  }
+ ],
+ "id": "RHSA-2024:6783",
+ "modified": "2026-10-09T10:11:48Z",
+ "published": "2024-09-30T21:12:13Z",
+ "references": [
+  {
+   "type": "ADVISORY",
+   "url": "https://access.redhat.com/errata/RHSA-2024:6783"
+  },
+  {
+   "type": "ARTICLE",
+   "url": "https://access.redhat.com/security/updates/classification/#moderate"
+  },
+  {
+   "type": "REPORT",
+   "url": "https://bugzilla.redhat.com/show_bug.cgi?id=2306158"
+  },
+  {
+   "type": "ADVISORY",
+   "url": "https://security.access.redhat.com/data/csaf/v2/advisories/2024/rhsa-2024_6783.json"
+  }
+ ],
+ "schema_version": "1.9.0",
+ "severity": [
+  {
+   "score": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H",
+   "type": "CVSS_V3"
+  }
+ ],
+ "summary": "Red Hat Security Advisory: openssl security update",
+ "upstream": [
+  "CVE-2024-6119"
+ ]
+}

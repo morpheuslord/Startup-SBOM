@@ -1,12 +1,30 @@
 cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+type: software
 title: "Startup-SBOM"
+abstract: >-
+  Root-confined static analysis of Linux root filesystems and container images:
+  maps what runs at boot to its packages, reverses vulnerabilities into concrete
+  threats, chains attacks and traces supply-chain blast radius.
 authors:
   - alias: "morpheuslord"
-  - name: "Chiranjeevi G"
+  - given-names: "Chiranjeevi"
+    family-names: "G"
     affiliation: "Cygnenoir-Cyber"
-version: release-1
-date-released: 2026-03-29
+version: 2.0.0
+date-released: 2026-10-10
 doi: 10.5281/zenodo.19307312
 license: MIT
 url: "https://github.com/morpheuslord/Startup-SBOM"
+# Points at the archived release-1 tree that the DOI above was minted for.
 repository-code: "https://github.com/morpheuslord/Startup-SBOM/tree/release-1"
+repository-artifact: "https://pypi.org/project/startup-sbom/"
+keywords:
+  - sbom
+  - cyclonedx
+  - spdx
+  - vulnerability
+  - threat-modeling
+  - supply-chain
+  - container
+  - systemd

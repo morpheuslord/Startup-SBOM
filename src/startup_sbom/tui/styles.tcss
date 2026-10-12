@@ -1,0 +1,318 @@
+/* Startup-SBOM TUI layout.  Colours come from the active theme ($primary, $error…),
+   so both light and dark themes work without per-theme rules. */
+
+/* ---------------------------------------------------------------- shared */
+.section {
+    margin: 1 0 0 0;
+    text-style: bold;
+    color: $accent;
+}
+
+Horizontal.row {
+    height: auto;
+    margin: 0 0 0 0;
+}
+
+.row Label {
+    margin: 1 1 0 1;
+}
+
+.row Input {
+    width: 1fr;
+    min-width: 12;
+}
+
+.row Select {
+    width: auto;
+    min-width: 16;
+}
+
+Horizontal.buttons {
+    height: auto;
+    margin: 1 0;
+}
+
+.buttons Button {
+    margin: 0 2 0 0;
+}
+
+Horizontal.toolbar {
+    height: auto;
+}
+
+.toolbar Static {
+    margin: 1 0 0 1;
+    color: $text-muted;
+}
+
+Horizontal.filters {
+    height: auto;
+}
+
+.filters Input {
+    width: 1fr;
+    min-width: 16;
+}
+
+.filters Select {
+    width: auto;
+    min-width: 14;
+}
+
+.filters Checkbox {
+    margin: 0 0 0 1;
+}
+
+Horizontal.split {
+    height: 1fr;
+}
+
+.split > DataTable,
+.split > Tree {
+    width: 1fr;
+}
+
+.split > .detail {
+    width: 46%;
+    min-width: 30;
+    border-left: tall $primary;
+    padding: 0 1;
+}
+
+SelectionList {
+    height: auto;
+    max-height: 8;
+    border: round $primary 50%;
+}
+
+/* ---------------------------------------------------------------- modals */
+OpenReportScreen,
+ExportScreen,
+ArticleScreen {
+    align: center middle;
+}
+
+.dialog {
+    width: 90%;
+    max-width: 120;
+    height: auto;
+    max-height: 90%;
+    background: $surface;
+    border: thick $primary;
+    padding: 1 2;
+}
+
+#open-dialog {
+    height: 80%;
+}
+
+#open-tree {
+    height: 1fr;
+    border: round $primary 50%;
+}
+
+#article-dialog {
+    height: 85%;
+}
+
+#article-dialog .split {
+    height: 1fr;
+    margin: 1 0 0 0;
+}
+
+#article-list {
+    width: 40%;
+    min-width: 24;
+}
+
+#article-banner {
+    padding: 0 1;
+    border: round $warning;
+}
+
+/* ---------------------------------------------------------------- home */
+#home {
+    padding: 1 2;
+}
+
+#home-title {
+    text-style: bold;
+    color: $accent;
+}
+
+#home-intro {
+    margin: 1 0;
+    color: $text-muted;
+    height: auto;
+}
+
+#home-actions {
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#home-actions Button {
+    margin: 0 2 0 0;
+}
+
+#recent-table {
+    height: 1fr;
+}
+
+/* ---------------------------------------------------------------- target */
+#target {
+    padding: 0 1;
+}
+
+#target-switch {
+    height: 1fr;
+    border: round $primary 50%;
+}
+
+#path-tree,
+#container-table {
+    height: 1fr;
+}
+
+#pane-host {
+    padding: 1 2;
+}
+
+#resolved {
+    height: auto;
+    margin: 1 0 0 0;
+}
+
+#target-error {
+    height: auto;
+    color: $error;
+}
+
+/* ---------------------------------------------------------------- settings */
+#settings {
+    padding: 0 1;
+}
+
+#cli-preview {
+    height: auto;
+    padding: 0 1;
+    border: round $primary 50%;
+}
+
+#nvd-hint,
+#ai-hint,
+#form-errors {
+    height: auto;
+    padding: 0 1;
+}
+
+/* ---------------------------------------------------------------- live scan */
+#scan-title {
+    height: auto;
+    padding: 1 1 0 1;
+}
+
+#scan-bar {
+    margin: 1 1;
+}
+
+#scan-stage,
+#scan-elapsed {
+    margin: 0 1;
+}
+
+#scan-log {
+    height: 1fr;
+    margin: 1 1 0 1;
+    border: round $primary 50%;
+}
+
+/* ---------------------------------------------------------------- results */
+#kpi-grid {
+    grid-size: 4;
+    grid-gutter: 1;
+    height: auto;
+    margin: 1 0;
+}
+
+.kpi {
+    height: 3;
+    padding: 0 1;
+    border: round $primary 50%;
+    content-align: center middle;
+    text-align: center;
+}
+
+.kpi-bad {
+    border: round $error;
+    background: $error 15%;
+}
+
+.kpi-warn {
+    border: round $warning;
+    background: $warning 15%;
+}
+
+#summary {
+    padding: 0 1;
+}
+
+#bars {
+    height: auto;
+    margin: 1 0;
+}
+
+#bars > Static {
+    width: 1fr;
+    margin: 0 1 0 0;
+}
+
+#os-badge,
+#policy,
+#drivers,
+#fixplan,
+#quadrant,
+#ai-summary,
+#coverage {
+    height: auto;
+    margin: 0 0 1 0;
+}
+
+#threat-count,
+#pkg-count,
+#vuln-count {
+    height: 1;
+    color: $text-muted;
+    padding: 0 1;
+}
+
+#supply-left {
+    width: 1fr;
+}
+
+#vendor-table {
+    height: 40%;
+}
+
+#blast-tree {
+    height: 1fr;
+}
+
+#finding-table {
+    height: 10;
+}
+
+#warnings-log {
+    height: 1fr;
+}
+
+/* ---------------------------------------------------------------- AI panel */
+#ai-status {
+    height: auto;
+    padding: 0 1;
+}
+
+#ai-scroll {
+    height: 1fr;
+    padding: 0 1;
+}

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Startup-SBOM logo">
+  <!-- Hexagonal shield -->
+  <path d="M32 4 56.2 18v28L32 60 7.8 46V18Z"
+        fill="none" stroke="#64748b" stroke-width="3.2" stroke-linejoin="round"/>
+  <!-- Power-on arc doubling as a dependency graph edge -->
+  <path d="M24.3 23.8 A12 12 0 1 0 39.7 23.8"
+        fill="none" stroke="#06b6d4" stroke-width="3.6" stroke-linecap="round"/>
+  <!-- Power stroke -->
+  <path d="M32 15.5V30"
+        fill="none" stroke="#06b6d4" stroke-width="3.6" stroke-linecap="round"/>
+  <!-- Dependency nodes riding the arc and the stroke -->
+  <circle cx="32" cy="15.5" r="3" fill="#06b6d4"/>
+  <circle cx="21.6" cy="39.2" r="3" fill="#06b6d4"/>
+  <circle cx="42.4" cy="39.2" r="3" fill="#06b6d4"/>
+</svg>

@@ -1,0 +1,60 @@
+# Development hooks for this repository. Install with:
+#   uv run pre-commit install --install-hooks
+# Run everything:
+#   uv run pre-commit run --all-files
+#
+# Remote hooks are pinned to commit SHAs (Dependabot "pre-commit" ecosystem
+# keeps them current). ruff and mypy versions match uv.lock where it matters:
+# mypy runs from the project environment so it sees the real dependencies.
+
+minimum_pre_commit_version: "4.4.0"
+default_install_hook_types: [pre-commit, pre-push]
+exclude: ^tests/fixtures/
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: check-toml
+      - id: check-yaml
+      - id: check-json
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+      - id: check-merge-conflict
+      - id: check-case-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 44b5042edab9382aba712eed4f9c7bab7a3d6a3e # frozen: v0.17.0
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    rev: 2e145a365871c9fef3715d38b9b7393ce4174c85 # frozen: 0.13.0
+    hooks:
+      - id: uv-lock
+        name: uv lock --check
+        args: [--check]
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: fa412071e4f5d44d44f9e365f4676f9df92456a2 # frozen: v1.30.1
+    hooks:
+      - id: zizmor
+
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (strict, project environment)
+        entry: uv run --frozen mypy
+        language: unsupported
+        types_or: [python, pyi]
+        files: ^src/
+        pass_filenames: false
+        require_serial: true

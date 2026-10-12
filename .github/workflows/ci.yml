@@ -1,0 +1,417 @@
+name: CI
+
+# Lint, types, tests, packaging, e2e scans and the container image in one
+# workflow. The image job also publishes: multi-arch `edge` on pushes to main
+# and `X.Y.Z`/`X.Y`/`X`/`latest` on release tags (PyPI publishing stays in
+# release.yml). CodeQL and zizmor live in security.yml.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  UV_VERSION: "0.13.0"
+  FORCE_COLOR: "1"
+  PYTHONUTF8: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: lint (ruff, lockfile)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: uv.lock is up to date
+        run: uv lock --check
+      - name: ruff check
+        run: uv run --locked --only-group lint ruff check --output-format=github .
+      - name: ruff format
+        run: uv run --locked --only-group lint ruff format --check --diff .
+
+  typecheck:
+    name: mypy (strict)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      # strict mypy needs the optional extras' real types (pydantic-ai, textual, …)
+      - run: uv sync --locked --all-extras
+      - run: uv run --locked mypy
+
+  test:
+    name: test (${{ matrix.os }}, py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.experimental }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        experimental: [false]
+        include:
+          # Python 3.15.0 was released 2026-10-09; allowed to fail until the
+          # whole dependency tree publishes cp315 wheels.
+          - os: ubuntu-latest
+            python-version: "3.15"
+            experimental: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ matrix.python-version }}
+      # extras included so the tui/ai/pdf suites run; their tests skip cleanly
+      # when an extra cannot be installed (e.g. the experimental Python).
+      - run: uv sync --locked --all-extras || uv sync --locked
+      - name: pytest
+        run: uv run --locked pytest -m "not network" --cov --cov-report=term --cov-report=xml --junitxml=junit.xml
+      - name: Annotate failed tests
+        if: failure() && hashFiles('junit.xml') != ''
+        run: uv run --locked --no-sync python .github/scripts/annotate_junit.py junit.xml
+
+  build:
+    name: build + wheel smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Build sdist and wheel
+        run: uv build --no-sources
+      - name: Install the wheel into a fresh venv and smoke test
+        run: |
+          set -euo pipefail
+          venv="$RUNNER_TEMP/wheel-smoke"
+          uv venv --python 3.11 "$venv"
+          uv pip install --python "$venv/bin/python" dist/*.whl
+          "$venv/bin/startup-sbom" version
+          "$venv/bin/startup-sbom" schema > "$RUNNER_TEMP/schema.json"
+          "$venv/bin/python" -c 'import json, sys; json.load(open(sys.argv[1], encoding="utf-8"))' "$RUNNER_TEMP/schema.json"
+          "$venv/bin/python" -m startup_sbom --help > /dev/null
+      - name: Install the sdist into a fresh venv and smoke test
+        run: |
+          set -euo pipefail
+          venv="$RUNNER_TEMP/sdist-smoke"
+          uv venv --python 3.14 "$venv"
+          uv pip install --python "$venv/bin/python" dist/*.tar.gz
+          "$venv/bin/startup-sbom" version
+      - name: Self-SBOM of runtime dependencies (CycloneDX 1.5)
+        run: uv export --frozen --no-dev --format cyclonedx1.5 --output-file startup-sbom-deps.cdx.json > /dev/null
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: self-sbom
+          path: startup-sbom-deps.cdx.json
+          if-no-files-found: error
+
+  audit:
+    name: dependency audit (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: uv audit (runtime dependencies)
+        run: uv audit --preview-features audit-command --locked --no-dev
+      - name: uv audit (all groups)
+        run: uv audit --preview-features audit-command --locked
+
+  e2e:
+    name: e2e (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: debian-12-slim, image: "debian:12-slim", scheme: tar }
+          - { name: alpine-3.20, image: "alpine:3.20", scheme: tar }
+          - { name: rockylinux-9-minimal, image: "rockylinux:9-minimal", scheme: tar }
+          - { name: alpine-3.20-docker-save, image: "alpine:3.20", scheme: docker-archive }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - run: uv sync --locked --no-dev
+      - name: Produce the image archive
+        env:
+          IMAGE: ${{ matrix.image }}
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          set -euo pipefail
+          docker pull --quiet --platform linux/amd64 "$IMAGE"
+          archive="$RUNNER_TEMP/target.tar"
+          if [ "$SCHEME" = "docker-archive" ]; then
+            docker save -o "$archive" "$IMAGE"
+          else
+            cid="$(docker create --platform linux/amd64 "$IMAGE")"
+            docker export -o "$archive" "$cid"
+            docker rm "$cid" > /dev/null
+          fi
+          ls -l "$archive"
+      - name: Scan offline (json + cyclonedx)
+        env:
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/basic"
+          uv run --locked --no-dev startup-sbom scan "${SCHEME}:$RUNNER_TEMP/target.tar" \
+            --offline -f json -f cyclonedx -o "$out"
+          test -s "$out/report.json"
+          test -s "$out/sbom.cdx.json"
+          jq -e . "$out/report.json" > /dev/null
+          jq -e '.bomFormat == "CycloneDX" and ((.components // []) | length > 0)' "$out/sbom.cdx.json"
+      - name: Scan offline (every output format)
+        env:
+          SCHEME: ${{ matrix.scheme }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/all"
+          args=()
+          for f in json cyclonedx spdx sarif openvex cdx-vex markdown html dot mermaid; do
+            args+=(-f "$f")
+          done
+          uv run --locked --no-dev startup-sbom scan "${SCHEME}:$RUNNER_TEMP/target.tar" \
+            --offline "${args[@]}" -o "$out"
+          for name in report.json sbom.cdx.json sbom.spdx.json results.sarif vex.openvex.json \
+                      vex.cdx.json report.md report.html attack-graph.dot attack-graph.mmd; do
+            test -s "$out/$name" || { echo "::error::missing or empty $name"; exit 1; }
+          done
+          for name in report.json sbom.cdx.json sbom.spdx.json results.sarif vex.openvex.json vex.cdx.json; do
+            jq -e . "$out/$name" > /dev/null
+          done
+          jq -e '.version == "2.1.0"' "$out/results.sarif"
+      - name: Usage errors exit with code 2
+        run: |
+          set +e
+          uv run --locked --no-dev startup-sbom scan "dir:$RUNNER_TEMP/does-not-exist" --offline -o "$RUNNER_TEMP/out/none"
+          rc=$?
+          set -e
+          echo "exit code: $rc"
+          test "$rc" -eq 2
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: e2e-${{ matrix.name }}
+          path: ${{ runner.temp }}/out/
+          if-no-files-found: ignore
+
+  docs:
+    name: docs (build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+      - name: Build the documentation site (warnings are errors)
+        run: uv run --locked --only-group docs mkdocs build --strict
+      - name: Upload the site for GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site/
+
+  docs-deploy:
+    # The github-pages environment only accepts the default branch, so pull
+    # requests validate the build above and main publishes it.
+    name: docs (deploy to GitHub Pages)
+    needs: [docs]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write # publish the Pages deployment
+      id-token: write # OIDC token proving the deployment's origin
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  image:
+    # Pull requests: build linux/amd64 only, load it locally and smoke test it.
+    # main: additionally push a multi-arch `edge` image to GHCR.
+    # Release tags: push multi-arch `X.Y.Z`, `X.Y`, `X`, `latest` and `sha-*`.
+    # Pushed images carry BuildKit provenance (mode=max), SBOM attestations and
+    # a Sigstore-signed GitHub build-provenance attestation in the registry.
+    name: container image (build, test, publish)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # checkout
+      packages: write # push to ghcr.io
+      id-token: write # Sigstore signing for actions/attest
+      attestations: write # store the build-provenance attestation
+      artifact-metadata: write # attestation storage records
+    env:
+      IMAGE: ghcr.io/morpheuslord/startup-sbom
+      # Only the canonical repository publishes; forks and PRs build and test only.
+      PUBLISH: ${{ github.repository == 'morpheuslord/Startup-SBOM' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=pep440,pattern={{version}}
+            type=pep440,pattern={{major}}.{{minor}}
+            type=pep440,pattern={{major}}
+            type=edge,branch=main
+            type=ref,event=pr
+            type=sha,format=long
+          labels: |
+            org.opencontainers.image.title=startup-sbom
+            org.opencontainers.image.description=Root-confined static analysis of Linux root filesystems and container images
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.documentation=https://github.com/morpheuslord/Startup-SBOM#readme
+
+      - name: Build (linux/amd64) for testing
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: startup-sbom:ci
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Smoke test the image
+        run: |
+          set -euo pipefail
+          docker run --rm startup-sbom:ci version
+          docker run --rm startup-sbom:ci schema > /dev/null
+          test "$(docker inspect --format '{{.Config.User}}' startup-sbom:ci)" != ""
+          test "$(docker inspect --format '{{.Config.User}}' startup-sbom:ci)" != "root"
+          test "$(docker inspect --format '{{.Config.User}}' startup-sbom:ci)" != "0"
+
+      - name: Dogfood - the image scans an exported rootfs (offline, read-only, no network)
+        run: |
+          set -euo pipefail
+          work="$RUNNER_TEMP/dogfood"
+          mkdir -p "$work/in" "$work/out"
+          cid="$(docker create startup-sbom:ci)"
+          docker export -o "$work/in/self.tar" "$cid"
+          docker rm "$cid" > /dev/null
+          docker run --rm --network none --read-only --tmpfs /tmp --tmpfs /cache \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --user "$(id -u):$(id -g)" \
+            -v "$work/in:/in:ro" -v "$work/out:/out" \
+            startup-sbom:ci scan tar:/in/self.tar --offline -f cyclonedx -f json -o /out
+          test -s "$work/out/sbom.cdx.json"
+          test -s "$work/out/report.json"
+
+      - name: Log in to GHCR
+        if: env.PUBLISH == 'true'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (linux/amd64, linux/arm64)
+        id: push
+        if: env.PUBLISH == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest build provenance
+        if: env.PUBLISH == 'true'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  action:
+    name: composite action self-test
+    runs-on: ubuntu-latest
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Export a small rootfs
+        run: |
+          set -euo pipefail
+          docker pull --quiet alpine:3.20
+          cid="$(docker create alpine:3.20)"
+          docker export -o "$RUNNER_TEMP/alpine.tar" "$cid"
+          docker rm "$cid" > /dev/null
+      - id: scan
+        uses: ./ # zizmor: ignore[self-repository] -- checked-out root action.yml; $/ is not yet understood by actionlint
+        with:
+          target: tar:${{ runner.temp }}/alpine.tar
+          formats: sarif,cyclonedx,json
+          output-dir: ${{ runner.temp }}/action-out
+          offline: "true"
+          upload-sarif: "false"
+      - name: Check action outputs
+        env:
+          SARIF_FILE: ${{ steps.scan.outputs.sarif-file }}
+          SBOM_FILE: ${{ steps.scan.outputs.sbom-file }}
+          REPORT_FILE: ${{ steps.scan.outputs.report-file }}
+          EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        run: |
+          set -euo pipefail
+          test "$EXIT_CODE" = "0"
+          for f in "$SARIF_FILE" "$SBOM_FILE" "$REPORT_FILE"; do
+            test -n "$f" && test -s "$f"
+          done
