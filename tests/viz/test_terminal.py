@@ -71,7 +71,7 @@ def test_meaning_survives_no_color(hostile_report: Report) -> None:
     t = hostile_report.threats[0]
     assert t.explanation is not None
     file = io.StringIO()
-    Console(file=file, width=100, no_color=True, legacy_windows=False).print(
+    Console(file=file, width=100, no_color=True, force_terminal=False, legacy_windows=False).print(
         vt.risk_waterfall(t.explanation)
     )
     out = file.getvalue()
@@ -85,7 +85,7 @@ def test_waterfall_degrades_to_table_when_very_narrow(hostile_report: Report) ->
     t = hostile_report.threats[0]
     assert t.explanation is not None
     file = io.StringIO()
-    Console(file=file, width=30, no_color=True, legacy_windows=False).print(
+    Console(file=file, width=30, no_color=True, force_terminal=False, legacy_windows=False).print(
         vt.risk_waterfall(t.explanation)
     )
     lines = [ln for ln in file.getvalue().splitlines() if ln.strip()]
@@ -95,7 +95,7 @@ def test_waterfall_degrades_to_table_when_very_narrow(hostile_report: Report) ->
 
 def test_chain_diagram_goes_vertical_below_fifty_columns(hostile_report: Report) -> None:
     file = io.StringIO()
-    Console(file=file, width=44, no_color=True, legacy_windows=False).print(
+    Console(file=file, width=44, no_color=True, force_terminal=False, legacy_windows=False).print(
         vt.attack_chain_diagram(hostile_report.attack_chains[0])
     )
     assert "▼" in file.getvalue()  # the vertical-arrow fallback
@@ -106,7 +106,9 @@ def test_empty_report_renders_placeholders(ctx: object) -> None:
 
     empty = F.make_report()
     file = io.StringIO()
-    console = Console(file=file, width=80, no_color=True, legacy_windows=False)
+    console = Console(
+        file=file, width=80, no_color=True, force_terminal=False, legacy_windows=False
+    )
     console.print(vt.severity_bars(empty))
     console.print(vt.ssvc_bars(empty))
     console.print(vt.epss_impact_quadrant(empty))
@@ -144,7 +146,9 @@ def test_renderables_compose_inside_textual_static(hostile_report: Report) -> No
 def test_deterministic_output(hostile_report: Report) -> None:
     def render() -> str:
         file = io.StringIO()
-        console = Console(file=file, width=100, no_color=True, legacy_windows=False)
+        console = Console(
+            file=file, width=100, no_color=True, force_terminal=False, legacy_windows=False
+        )
         for renderable in _all_renderables(hostile_report):
             console.print(renderable)
         return file.getvalue()

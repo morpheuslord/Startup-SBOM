@@ -68,6 +68,8 @@ from startup_sbom.tui.widgets import SafeHeader
 if TYPE_CHECKING:
     from startup_sbom.tui.app import StartupSbomApp
 
+_MOUNT_RETRIES = 200  # refresh cycles to wait for nested panes before giving up
+
 TABS: tuple[tuple[str, str], ...] = (
     ("tab-summary", "1 Summary"),
     ("tab-threats", "2 Threats"),
@@ -242,6 +244,16 @@ class ResultsScreen(Screen[None]):
         yield Footer()
 
     def on_mount(self) -> None:
+        self._initial_build(_MOUNT_RETRIES)
+
+    def _initial_build(self, retries: int) -> None:
+        # Widgets nested inside TabbedContent panes mount in their own message
+        # pumps, so on a slow host they can still be pending when this screen's
+        # Mount runs; wait for them instead of crashing with NoMatches.
+        if not self.query("#threat-table") or not self.query("#policy"):
+            if retries:
+                self.call_after_refresh(self._initial_build, retries - 1)
+            return
         table = self.query_one("#threat-table", DataTable)
         for key, label, width in THREAT_COLUMNS:
             table.add_column(label, key=key, width=width)
@@ -255,7 +267,8 @@ class ResultsScreen(Screen[None]):
             run_background(self, "explain", lambda: integrations.explain(report))
 
     def on_screen_resume(self) -> None:
-        self.refresh_summary()
+        if "tab-summary" in self._built:
+            self.refresh_summary()
 
     # ------------------------------------------------------------------ summary
     def refresh_summary(self) -> None:
