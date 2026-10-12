@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 from rich.text import Text
-from tuihelpers import run_ui, wait_until
+from tuihelpers import results_ready, run_ui, wait_until
 
 from startup_sbom.models import (
     AIAssessment,
@@ -386,7 +386,7 @@ def test_open_report_from_file(make_app: MakeApp, report: Report, tmp_path: Path
             modal = app.screen
             modal.query_one("#open-path", Input).value = str(path)
             modal._typed()
-            await wait_until(pilot, lambda: isinstance(app.screen, ResultsScreen))
+            await wait_until(pilot, lambda: results_ready(app))
             results = app.screen
             assert isinstance(results, ResultsScreen)
             assert results.report.metadata.scan_id == report.metadata.scan_id
@@ -424,7 +424,7 @@ def test_run_with_report_path_opens_results(report: Report, tmp_path: Path) -> N
 
     async def main() -> None:
         async with app.run_test(size=(140, 50)) as pilot:
-            await wait_until(pilot, lambda: isinstance(app.screen, ResultsScreen))
+            await wait_until(pilot, lambda: results_ready(app))
 
     run_ui(main())
 
@@ -449,6 +449,6 @@ def test_home_lists_and_opens_recent_scans(
             await wait_until(pilot, lambda: table.row_count == 1)
             table.focus()
             await pilot.press("enter")
-            await wait_until(pilot, lambda: isinstance(app.screen, ResultsScreen))
+            await wait_until(pilot, lambda: results_ready(app))
 
     run_ui(main())

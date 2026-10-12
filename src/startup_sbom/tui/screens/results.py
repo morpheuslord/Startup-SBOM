@@ -266,6 +266,11 @@ class ResultsScreen(Screen[None]):
             report = self.report
             run_background(self, "explain", lambda: integrations.explain(report))
 
+    @property
+    def ready(self) -> bool:
+        """True once the summary and threat tabs have been built after mounting."""
+        return "tab-threats" in self._built
+
     def on_screen_resume(self) -> None:
         if "tab-summary" in self._built:
             self.refresh_summary()

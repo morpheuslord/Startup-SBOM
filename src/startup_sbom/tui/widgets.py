@@ -1,9 +1,10 @@
 """Shared widgets and fixes for Textual mount races.
 
 Textual 8.2 widgets update their own children from watchers and Mount handlers
-without checking that those children are composed yet.  On a loaded host (CI
-runners, coverage tracing, a fast screen switch) the child can be missing and
-the app crashes with ``NoMatches``:
+without checking that those children exist.  When a screen is torn down while it
+is still mounting (quitting right after a screen switch, e.g. the moment a scan
+finishes) the children are already gone and the app crashes with ``NoMatches``
+on exit:
 
 * ``Header`` registers ``title``/``sub_title`` watchers that do
   ``query_one(HeaderTitle)`` guarded only against ``NoScreen``.

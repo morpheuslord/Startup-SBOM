@@ -5,7 +5,9 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable, Coroutine
+from typing import Any
 
+from textual.app import App
 from textual.pilot import Pilot
 
 
@@ -28,3 +30,15 @@ async def wait_until(
             return
         await pilot.pause(0.05)
     raise AssertionError(message)
+
+
+def results_ready(app: App[Any]) -> bool:
+    """The results browser is on screen *and* finished building.
+
+    ``app.screen`` switches before the new screen mounts; ending a test then
+    tears the screen down mid-mount, so tests wait for this instead.
+    """
+    from startup_sbom.tui.screens.results import ResultsScreen
+
+    screen = app.screen
+    return isinstance(screen, ResultsScreen) and screen.ready

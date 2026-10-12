@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from tuihelpers import run_ui, wait_until
+from tuihelpers import results_ready, run_ui, wait_until
 
 import startup_sbom.tui as tui_pkg
 from startup_sbom.errors import ScanCancelledError, StartupSBOMError
@@ -187,7 +187,7 @@ def test_scan_flow_progress_results_and_written_report(
             await pilot.pause(0.1)
             settings.action_start()
             # the instant fake scan may already have finished by the first pause
-            await wait_until(pilot, lambda: isinstance(app.screen, ResultsScreen))
+            await wait_until(pilot, lambda: results_ready(app))
             results = app.screen
             assert isinstance(results, ResultsScreen)
             assert results.report is report
