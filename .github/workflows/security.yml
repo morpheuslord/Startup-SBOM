@@ -68,11 +68,13 @@ jobs:
           gh-code-scanning-compat: true
           # Never fail here; code scanning owns the pass/fail decision on pull requests.
           max-allowed-issues: 2147483647
+      # Codacy writes one SARIF run per tool; code scanning needs one category per run.
+      - name: Give each Codacy tool its own code-scanning category
+        run: python3 .github/scripts/split_sarif_categories.py results.sarif codacy.sarif codacy
       - name: Upload Codacy results to code scanning
         uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
-          sarif_file: results.sarif
-          category: codacy
+          sarif_file: codacy.sarif
 
   zizmor:
     name: zizmor

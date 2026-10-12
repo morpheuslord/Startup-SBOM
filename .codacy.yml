@@ -1,0 +1,6 @@
+# Codacy Analysis CLI configuration (read by the codacy job in security.yml).
+exclude_paths:
+  - "Docs/**" # prose; markdown linting is not a security finding
+  - "**/*.typ" # Typst templates; Codacy's parsers mistake them for code
+  - "tests/fixtures/**" # deliberately hostile test data (malformed archives, payloads)
+  - "site/**" # MkDocs build output, never committed
