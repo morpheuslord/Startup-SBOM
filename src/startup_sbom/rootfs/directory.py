@@ -35,6 +35,11 @@ class DirectoryRootFS(RootFS):
         self._bad_chars = {c for c in (os.sep, os.altsep) if c and c != "/"}
         if os.name == "nt":
             self._bad_chars |= set(':*?"<>|')
+            self.warnings.append(
+                "dir: target on a Windows host: NTFS does not store POSIX permission bits,"
+                " so executable, setuid and capability findings are incomplete; scan a tar"
+                " or OCI archive of the root filesystem for full fidelity"
+            )
 
     def _probe_case_sensitive(self) -> bool:
         try:

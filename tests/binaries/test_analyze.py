@@ -207,9 +207,7 @@ def test_cyclic_needed_terminates(make_fs, make_ctx) -> None:
             "/usr/bin/app": exe(["liba.so"]),
             "/usr/lib64/liba.so": lib("liba.so", ["libb.so"]),
             "/usr/lib64/libb.so": lib("libb.so", ["liba.so", "libapp.so"]),
-            "/usr/lib64/libapp.so": Symlink("/usr/bin/app")
-            if sys.platform != "win32"
-            else lib("x"),
+            "/usr/lib64/libapp.so": Symlink("/usr/bin/app"),
         }
     )
     app = analyze_executables(make_ctx(fs), ["/usr/bin/app"], FileOwnerIndex(fs))["/usr/bin/app"]
@@ -411,10 +409,9 @@ def test_find_unmanaged(make_fs, make_ctx) -> None:
         "/usr/local/bin/notes.txt": File("hello", 0o755),
         "/opt/app/bin/run.sh": File("#!/bin/sh\n", 0o755),
         "/opt/app/lib/deep/deeper/deepest/x/y": File(exe([]), 0o755),
+        "/bin": Symlink("usr/bin"),
+        "/usr/local/bin/link": Symlink("/usr/bin/ls"),
     }
-    if sys.platform != "win32":
-        spec["/bin"] = Symlink("usr/bin")
-        spec["/usr/local/bin/link"] = Symlink("/usr/bin/ls")
     fs = make_fs(spec)
     idx = FileOwnerIndex(fs)
     idx.add("pkg:deb/debian/coreutils@1", ["/bin/ls"])

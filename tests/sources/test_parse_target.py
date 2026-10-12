@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import imgbuild
@@ -38,6 +39,7 @@ def test_auto_file_is_archive(tmp_path: Path) -> None:
     assert parse_target(f"oci-archive:{f}").scheme == "oci-archive"
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="NTFS: ':' starts an alternate data stream")
 def test_existing_path_named_like_scheme(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
     (tmp_path / "docker:x").write_bytes(b"")

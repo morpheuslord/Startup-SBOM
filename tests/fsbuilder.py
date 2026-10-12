@@ -18,9 +18,12 @@ from __future__ import annotations
 import io
 import os
 import posixpath
+import sys
 import tarfile
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import pytest
 
 
 @dataclass(frozen=True)
@@ -61,8 +64,27 @@ def _norm(entry: Entry) -> File | Symlink | Dir | Whiteout:
     return entry
 
 
+def _unrepresentable_on_windows(path: str, entry: File | Symlink | Dir | Whiteout) -> str | None:
+    if ":" in path:
+        return "NTFS treats ':' in a file name as an alternate data stream"
+    if isinstance(entry, Symlink):
+        return "POSIX symlink semantics need a POSIX host filesystem"
+    if isinstance(entry, File) and entry.mode & 0o7111:
+        return "NTFS cannot store POSIX execute/setuid/setgid bits"
+    return None
+
+
 def build_dir(root: Path, spec: Spec) -> Path:
-    """Materialise ``spec`` under ``root`` (setuid bits applied where the host allows)."""
+    """Materialise ``spec`` under ``root`` (setuid bits applied where the host allows).
+
+    On Windows a spec the host filesystem cannot represent skips the test; the
+    tar backend runs the same spec there with full fidelity.
+    """
+    if sys.platform == "win32":
+        for path, raw in spec.items():
+            reason = _unrepresentable_on_windows(path, _norm(raw))
+            if reason is not None:
+                pytest.skip(f"dir backend on Windows: {reason} (covered by the tar backend)")
     root.mkdir(parents=True, exist_ok=True)
     for path, raw in sorted(spec.items()):
         entry = _norm(raw)
