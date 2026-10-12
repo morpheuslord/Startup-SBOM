@@ -8,8 +8,6 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
-## [Unreleased]
-
 ## [2.0.0] - 2026-10-12
 
 A ground-up rewrite. Startup-SBOM is now a root-confined static analyser that
