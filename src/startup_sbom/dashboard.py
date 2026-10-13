@@ -108,8 +108,11 @@ class ScanDashboard:
         if self._journal_path is not None:
             # Owner-only, like the reports: the journal names the target's files.
             fd = os.open(self._journal_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-            with contextlib.suppress(OSError):
-                os.fchmod(fd, 0o600)  # an existing file keeps its old mode otherwise
+            with contextlib.suppress(OSError):  # an existing file keeps its old mode otherwise
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
+                else:  # Windows: no fchmod; chmod only toggles the read-only bit there
+                    os.chmod(self._journal_path, 0o600)
             self._journal = os.fdopen(fd, "w", encoding="utf-8")
         if self.live_mode:
             self._live = Live(
