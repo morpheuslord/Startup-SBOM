@@ -8,6 +8,91 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
+## [2.0.1] - 2026-10-13
+
+### Added
+
+- Chroot mode (`startup-sbom scan --mode static|chroot|auto`, `ScanOptions.mode`): a new
+  pipeline stage asks the target's own dynamic loader (`ld.so --list`),
+  `systemctl --root=/ list-unit-files` and package manager (`dpkg-query`, `rpm -qa`,
+  `apk info -v`, `pacman -Q`) to confirm the static results. They run only inside a
+  bubblewrap sandbox: a new user namespace as `nobody`, all capabilities dropped,
+  `no_new_privs`, every namespace unshared (no network), nested user namespaces disabled,
+  the target root read-only, a cleared environment, resource limits, timeouts with
+  process-group kill and streaming output caps, after a self-test proves the identity.
+  Directory targets on a same-architecture Linux host only; `--mode chroot` warns and
+  `--mode auto` silently stays static when the sandbox is unavailable. Probes confirm and
+  never suppress: unit-state disagreements are recorded as evidence, package-inventory
+  mismatches warned, and libraries the static resolver missed added with `via: "loader"`.
+  When the scanner runs as root it starts bubblewrap as host `nobody`, so the sandbox
+  never maps to host root. Static remains
+  the default. See `Docs/chroot-mode.md`.
+- Triggers: every threat lists what activates the vulnerable code (`boot`, `socket`,
+  `timer`, `cron`, `path`, `dbus`, `device`, `entrypoint`, `setuid`, `kernel`), who can
+  fire it (network, local user, system, device) and the identity it runs as; a threat
+  with no trigger is installed code that nothing runs. Shown in a new *Trigger* column of
+  the console, Markdown and HTML threat tables.
+- Cron jobs (`/etc/crontab`, `/etc/cron.d`, `/var/spool/cron{,/crontabs}`,
+  `/etc/cron.{hourly,daily,weekly,monthly}`; `@reboot` counts as boot) and udev rule
+  programs (`RUN+=`, `RUN{program}`, `PROGRAM`, `IMPORT{program}` with
+  `/etc` > `/run` > `/usr/lib` precedence) are analysed as services. They count as
+  started automatically only when an automatically started service runs a cron or udev
+  daemon.
+- Rolling Debian derivatives (Kali, …) without an OSV.dev ecosystem are matched against
+  Debian testing (`Debian:14`) advisories as a derivative fallback, with vendor suffixes
+  such as `+kali1` removed conservatively and reduced confidence;
+  `--no-derivative-fallback` turns it off.
+- Live dashboard for `startup-sbom scan` (on by default on a terminal, `--live/--no-live`):
+  stage checklist with durations and a one-line digest per stage, and a rolling pane of
+  raw operations (HTTP requests, package databases read, ELF closures, sandboxed
+  commands, …). `--journal FILE` writes every stage, operation, digest and analyst note
+  as JSON lines. The library API gains an `activity` callback (`ActivityEvent`).
+- Live analyst (`--ai-live`, `--ai-provider`, `--ai-model`, `--ai-budget`, default
+  USD 0.10; `ai` extra): a cheap model comments on each stage as it finishes, streaming
+  its thinking and commentary. It has no tools, sees only stage digests and recent
+  operation lines as fenced untrusted data, is display-only and never changes the report.
+- The TUI scan screen shows the live stage list with digests, the raw operations log and
+  a live analyst panel; the analyst is switched on in the scan settings.
+- Report schema 2.2: `Threat.triggers`, `Coverage.analysis_mode`,
+  `Coverage.runtime_probes`, activation `device`, init systems `cron` and `udev`.
+  Reports show an *Analysis mode* line under coverage.
+- Documentation is mirrored to the GitHub wiki by `tools/docs_to_wiki.py` and the
+  `wiki.yml` workflow; `Docs/` stays the source of truth, so edit there, not in the wiki.
+
+### Changed
+
+- The 1.x entry point's `--analysis-mode chroot` now maps to the sandboxed
+  `--mode chroot` instead of falling back to static analysis.
+- Library closures of setuid and capability binaries are computed, so threat reversal
+  knows which libraries a local user can make run as root.
+- `pydantic-ai`'s start-up banner is suppressed (`PYDANTIC_AI_NO_BANNER=1` unless already
+  set), so it no longer breaks the live dashboard and the TUI.
+
+### Fixed
+
+- Threat reversal no longer advances the attacker state on wording alone: it advances
+  only when the flaw grants control or is a privilege-escalation weakness *and* something
+  runs the code with more privilege (a root service, a setuid-root/capability binary that
+  ships or loads it through a recorded link edge, the kernel). Installed-only code keeps
+  the attacker's own privileges, and non-root services with privilege-escalation CWEs
+  stop at the service account unless a privileged path exists.
+- CVSS impact gate: a confidentiality-only vector (`I:N/A:N`) never yields code execution
+  or privilege gain (`--no-cvss-impact-gate` disables the gate).
+- Rule R5 requires a recorded link edge from a setuid/capability binary to the vulnerable
+  library (or the C library/loader package `libc6`/`glibc`/`musl` when no closure was
+  recorded), instead of firing whenever any setuid binary existed. On one Kali report this
+  removed every chain built from a confidentiality-only flaw in an installed-only pip
+  package.
+- Attack-graph export (`dot`, `mermaid`): supply-chain nodes without an edge are dropped,
+  packages sharing a name are told apart (e.g. Go `stdlib go1.18 (mkcert)`), and an empty
+  Mermaid graph says that no attack chain or supply-chain path was found.
+
+### Security
+
+- CI tooling: the Codacy CLI's npm dependencies override `argparse` to `^2.0.1`, which
+  removes `sprintf-js` (Dependabot alert: `sprintf-js` ≤ 1.1.3 denial of service through
+  unbounded precision, no patched version).
+
 ## [2.0.0] - 2026-10-12
 
 A ground-up rewrite. Startup-SBOM is now a root-confined static analyser that
@@ -100,6 +185,6 @@ Initial public release (`main.py` + `sbom_manager/`): dpkg/rpm startup-service m
 NVD lookups, CycloneDX output and service flowcharts. Archived at DOI
 [10.5281/zenodo.19307312](https://doi.org/10.5281/zenodo.19307312).
 
-[Unreleased]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.0...HEAD
+[2.0.1]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/morpheuslord/Startup-SBOM/compare/release-1...v2.0.0
 [release-1]: https://github.com/morpheuslord/Startup-SBOM/tree/release-1
