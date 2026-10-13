@@ -44,6 +44,8 @@ nav:
 
 theme:
   name: material
+  # Release banner on every page (overrides/main.html; bump it with the version).
+  custom_dir: overrides
   logo: assets/logo.svg
   favicon: assets/favicon.svg
   icon:
@@ -105,4 +107,4 @@ extra:
     - icon: fontawesome/brands/docker
       link: https://github.com/morpheuslord/Startup-SBOM/pkgs/container/startup-sbom
 
-copyright: Copyright &copy; morpheuslord — MIT License
+copyright: Startup-SBOM 2.0.2 · Copyright &copy; morpheuslord — MIT License

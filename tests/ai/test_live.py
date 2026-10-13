@@ -112,3 +112,22 @@ RLO = chr(0x202E)
 def test_stage_text_is_sanitised(bad: str) -> None:
     _analyst, events = _run([(bad, bad)])
     assert all(ESC not in e.stage and RLO not in e.stage for e in events)
+
+
+@pytest.mark.parametrize(
+    "model", ["anthropic:claude-haiku-4-5", "anthropic:claude-sonnet-5", "openai:gpt-6-luna"]
+)
+def test_narrator_keeps_thinking_without_a_token_cap(
+    model: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Anthropic rejected max_tokens 600 <= thinking.budget_tokens 2048 for Haiku 4.5:
+    thinking stays as the profile sets it and no max_tokens is imposed."""
+    from startup_sbom.ai import live
+    from startup_sbom.ai.providers import model_settings
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _agent, settings, _guard, _label = live._build(None, model, "cheap", 0.1, None)
+    assert settings is not None
+    assert "max_tokens" not in settings
+    assert settings.get("thinking") == model_settings(model, "cheap").get("thinking")

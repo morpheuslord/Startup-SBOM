@@ -73,7 +73,7 @@ startup-sbom scan dir:/mnt/target_root --ai-live --ai-model anthropic:<model-id>
 
 **Setup.** It needs the `ai` extra (`startup-sbom[ai]`) and a provider key in the environment. The provider is auto-detected unless `--ai-provider` names one; the model is the provider's cheap-profile specialist model unless `--ai-model provider:model-id` names one ([Intelligence and AI](intelligence-and-ai.md#the-agentic-ai-layer) lists the providers). `--ai-live` cannot be combined with `--offline`.
 
-**Cost.** `--ai-budget` (default **USD 0.10**) caps the estimated spend across the whole scan, through the same cost guard as `startup-sbom ai analyze`. Further limits are fixed: at most 600 output tokens per stage, 40 model requests and 200,000 tokens per scan, a 45-second timeout per stage, and low thinking effort where the provider supports that setting. When the budget is reached the analyst stops, says so in its pane, and the scan carries on.
+**Cost.** `--ai-budget` (default **USD 0.10**) caps the estimated spend across the whole scan, through the same cost guard as `startup-sbom ai analyze`. Further limits are fixed: 40 model requests and 200,000 tokens per scan and a 45-second timeout per stage. Thinking follows the profile, and no per-stage output cap is imposed, so a provider's thinking budget always fits inside the request's token limit. When the budget is reached the analyst stops, says so in its pane, and the scan carries on.
 
 **Safety.**
 

@@ -66,7 +66,6 @@ DEFAULT_BUDGET_USD = 0.10
 STAGE_TIMEOUT = 45.0
 MAX_STAGE_CHARS = 4_000
 MAX_OPS = 12
-MAX_TOKENS = 600
 
 
 @dataclass(frozen=True, slots=True)
@@ -330,10 +329,12 @@ def _build(
         settings = model_settings(name, choice.profile)
         names = (name,)
         label = name
-    settings["max_tokens"] = min(int(settings.get("max_tokens", MAX_TOKENS)), MAX_TOKENS)
     settings["timeout"] = min(float(settings.get("timeout", STAGE_TIMEOUT)), STAGE_TIMEOUT)
-    if isinstance(settings.get("thinking"), str) and settings["thinking"] not in ("low", True):
-        settings["thinking"] = "low"  # keep the narrator fast and cheap
+    # Thinking stays as the profile sets it (it is shown live), and no max_tokens is
+    # imposed: budget-based providers reject max_tokens <= thinking.budget_tokens, so
+    # pydantic-ai's default (sized above any thinking budget) is used.  Spending is
+    # bounded by the cost guard below, the prompt asks for a few sentences.
+    settings.pop("max_tokens", None)
     guard = make_guard(
         max_cost_usd,
         names,

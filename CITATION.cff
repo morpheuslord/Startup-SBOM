@@ -11,7 +11,7 @@ authors:
   - given-names: "Chiranjeevi"
     family-names: "G"
     affiliation: "Cygnenoir-Cyber"
-version: 2.0.1
+version: 2.0.2
 date-released: 2026-10-13
 doi: 10.5281/zenodo.19307312
 license: MIT
