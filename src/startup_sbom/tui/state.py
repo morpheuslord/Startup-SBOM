@@ -68,9 +68,15 @@ def default_filename(fmt: str) -> str:
 # --------------------------------------------------------------------------- form model
 @dataclass(slots=True)
 class AISettings:
-    """AI analyst options (provider keys come from the environment only)."""
+    """AI analyst options (provider keys come from the environment only).
+
+    ``enabled`` runs the post-scan assessment; ``live`` lets the live analyst
+    comment on each stage while the scan runs (display-only).  Both share the
+    provider, model, profile and per-run spending cap.
+    """
 
     enabled: bool = False
+    live: bool = False
     provider: str | None = None
     model: str | None = None
     profile: str = "cheap"
@@ -104,6 +110,7 @@ class FormValues:
     intel_budget: float = 120.0
     intel_articles: bool = True
     ai_enabled: bool = False
+    ai_live: bool = False
     ai_provider: str = ""
     ai_model: str = ""
     ai_profile: str = "cheap"
@@ -225,6 +232,7 @@ def build_request(values: FormValues, env: Mapping[str, str] | None = None) -> S
     )
     ai = AISettings(
         enabled=values.ai_enabled and not values.offline,
+        live=values.ai_live and not values.offline,
         provider=values.ai_provider or None,
         model=values.ai_model.strip() or None,
         profile=values.ai_profile,
@@ -297,6 +305,13 @@ def equivalent_cli(values: FormValues) -> str:
             args += ["--ai-audience", values.ai_audience]
         if values.ai_max_cost != defaults.ai_max_cost:
             args += ["--ai-max-cost", f"{values.ai_max_cost:g}"]
+    if values.ai_live and not values.offline:
+        args.append("--ai-live")
+        if values.ai_provider and not values.ai_enabled:
+            args += ["--ai-provider", values.ai_provider]
+        if values.ai_model.strip() and not values.ai_enabled:
+            args += ["--ai-model", values.ai_model.strip()]
+        args += ["--ai-budget", f"{values.ai_max_cost:g}"]
     return shlex.join(args)
 
 

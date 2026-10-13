@@ -12,6 +12,7 @@ from collections import defaultdict
 
 from startup_sbom.context import ScanContext
 from startup_sbom.errors import StartupSBOMError
+from startup_sbom.log import ops
 from startup_sbom.pkgdb.alpm import AlpmDatabase
 from startup_sbom.pkgdb.apk import ApkDatabase
 from startup_sbom.pkgdb.base import PackageDatabase, PackageRecord
@@ -79,6 +80,7 @@ def read_all(ctx: ScanContext) -> tuple[list[PackageRecord], list[str]]:
             continue
         if not found:
             ctx.limit(f"{db.name} package database present but contained no installed packages")
+        ops.info("%s: %s installed package(s) read", db.name, f"{len(found):,}")
         records.extend(found)
     ensure_unique_ids(records)
     records.sort(key=_sort_key)

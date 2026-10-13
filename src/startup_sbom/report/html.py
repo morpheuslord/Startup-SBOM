@@ -21,6 +21,7 @@ from startup_sbom.models import Report, Severity, SSVCDecision, Threat
 from startup_sbom.report.graphs import graph_json
 from startup_sbom.report.native import (
     RenderOptions,
+    analysis_mode_label,
     canonical,
     iso_z,
     listen_text,
@@ -29,6 +30,7 @@ from startup_sbom.report.native import (
     service_reachability,
     threat_sort_key,
     timestamp,
+    trigger_label,
     vuln_reachability,
     vuln_score,
     vuln_severity,
@@ -328,6 +330,7 @@ def render_html(report: Report, options: RenderOptions) -> str:
                 e(t.vulnerability) + kev,
                 e(package_label(pkgs.get(t.package), t.package)),
                 e(t.reachability.value.replace("_", " ")),
+                e(trigger_label(t)),
                 f"{e(t.precondition)} → {e(t.postcondition)}",
                 e(", ".join(svcs[s].name if s in svcs else s for s in t.services) or "-"),
                 _pct(tv.epss if tv else None),
@@ -345,6 +348,7 @@ def render_html(report: Report, options: RenderOptions) -> str:
                 "Vulnerability",
                 "Package",
                 "Reachability",
+                "Trigger",
                 "Attacker gain",
                 "Services",
                 "EPSS",
@@ -589,6 +593,7 @@ def render_html(report: Report, options: RenderOptions) -> str:
     # ------------------------------------------------------------- coverage
     cov = md_.coverage
     items = [
+        f"Analysis mode: {e(analysis_mode_label(cov))}",
         f"Package databases: {e(', '.join(cov.package_databases) or 'none')}",
         f"Init systems: {e(', '.join(cov.init_systems) or 'none')}",
         f"Vulnerability sources: {e(', '.join(cov.vulnerability_sources) or 'none')}"

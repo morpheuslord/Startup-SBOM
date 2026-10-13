@@ -12,6 +12,7 @@ from collections import Counter
 from datetime import UTC, datetime
 
 from startup_sbom.context import ScanContext
+from startup_sbom.distro import DEBIAN_TESTING_CODENAME, derivative_fallback_ecosystem
 from startup_sbom.errors import NetworkError
 from startup_sbom.models import Package, PackageType, Vulnerability
 from startup_sbom.net import HttpClient
@@ -21,7 +22,7 @@ from startup_sbom.vulns.epss import EPSS_TTL, fetch_epss_csv, load_epss, parse_e
 from startup_sbom.vulns.kev import KEV_TTL, KEV_URL, load_kev, parse_kev
 from startup_sbom.vulns.normalize import is_cve, merge_vulnerabilities
 from startup_sbom.vulns.nvd import NvdSource
-from startup_sbom.vulns.osv import OS_TYPES, OsvSource
+from startup_sbom.vulns.osv import OS_TYPES, OsvSource, fallback_ecosystem
 
 KNOWN_SOURCES = ("osv", "arch", "nvd")
 _UNSUPPORTED = {
@@ -84,7 +85,11 @@ def _uncovered_limits(ctx: ScanContext, uncovered: list[Package]) -> None:
     for ptype, count in sorted(by_type.items()):
         if ptype in OS_TYPES:
             name = _UNSUPPORTED.get(ctx.os.id)
-            if name or not ctx.os.vuln_ecosystems:
+            # with the derivative fallback off, its parent ecosystem does not count
+            ecos = set(ctx.os.vuln_ecosystems)
+            if not ctx.options.derivative_fallback:
+                ecos.discard(derivative_fallback_ecosystem(ctx.os) or "")
+            if name or not ecos:
                 label = name or _os_label(ctx)
                 ctx.limit(
                     f"vulnerabilities not assessed for {count} {ptype} packages: {label} is not"
@@ -100,6 +105,21 @@ def _uncovered_limits(ctx: ScanContext, uncovered: list[Package]) -> None:
             ctx.limit(f"vulnerabilities not assessed for {count} alpm packages (arch source off)")
         else:
             ctx.limit(f"vulnerabilities not assessed for {count} {ptype} packages (no source)")
+
+
+def _fallback_limits(ctx: ScanContext, assessed: list[Package]) -> None:
+    """State that OS packages were matched through the derivative fallback."""
+    eco = fallback_ecosystem(ctx)
+    if eco is None:
+        return
+    by_type = Counter(p.type for p in assessed if p.type in OS_TYPES)
+    for ptype, count in sorted(by_type.items()):
+        ctx.limit(
+            f"{_os_label(ctx)}: {count} {ptype} packages matched against Debian testing"
+            f" ({DEBIAN_TESTING_CODENAME}, {eco}) advisories as a derivative fallback"
+            " (OSV.dev has no ecosystem for this distribution); vendor revision suffixes"
+            " are ignored and confidence is reduced"
+        )
 
 
 def match_vulnerabilities(
@@ -121,6 +141,8 @@ def match_vulnerabilities(
             continue
         ctx.vuln_sources_used.add(source.name)
         covered.update(p.id for p in pkgs)
+        if isinstance(source, OsvSource):
+            _fallback_limits(ctx, pkgs)
         results.extend(_run(ctx, source, pkgs))
     uncovered = [p for p in packages if p.id not in covered]
     if "nvd" in (s.lower() for s in ctx.options.vuln_sources) and uncovered:

@@ -21,6 +21,7 @@ from startup_sbom.models import (
     LibraryLink,
     ListenAddress,
     Package,
+    PackageType,
     Reachability,
     Report,
     Service,
@@ -36,13 +37,23 @@ KERNEL_RE = re.compile(
     r"kernel-64k|kernel-64k-core|linux|linux-lts|linux-zen|linux-hardened|linux-rt|"
     r"linux-virt|linux-edge|linux-generic|linux-image)$"
 )
+#: The C library / dynamic loader: mapped into every dynamically linked process,
+#: setuid ones included, even when no link closure was recorded.
+LOADER_RE = re.compile(r"^(?:libc6|glibc|musl)$")
 _CONF_RANK = {Confidence.HIGH: 2, Confidence.MEDIUM: 1, Confidence.LOW: 0}
 MAX_PATHS = 8
+MAX_LOADERS = 4
+_OS_TYPES = frozenset({PackageType.DEB, PackageType.RPM, PackageType.APK, PackageType.ALPM})
 
 
 def is_kernel_package(pkg: Package) -> bool:
     """Installed kernel image packages (headers, firmware and tools excluded)."""
     return bool(KERNEL_RE.match(pkg.name))
+
+
+def is_loader_package(pkg: Package) -> bool:
+    """The C library / dynamic loader package (``libc6``, ``glibc``, ``musl``)."""
+    return pkg.type in _OS_TYPES and bool(LOADER_RE.match(pkg.name))
 
 
 def strongest(levels: list[Reachability]) -> Reachability:
@@ -91,6 +102,9 @@ class ReachInfo:
     primary_service: str | None = None  # the service behind ``level`` (if any)
     binaries: list[str] = field(default_factory=list)
     setuid_binaries: list[Binary] = field(default_factory=list)
+    #: Root-granting setuid/capability binaries of *other* packages that load this
+    #: package's code (each a loader path ``[binary, ..., library]``).
+    privileged_loaders: list[list[str]] = field(default_factory=list)
     link: LibraryLink | None = None  # weakest edge of the strongest library path
     evidence: list[str] = field(default_factory=list)
     network_exposed: bool = False
@@ -120,6 +134,8 @@ class SystemIndex:
                     seen.setdefault(b.path, b)
             self.service_binaries[svc.id] = [seen[k] for k in sorted(seen)]
         self.exposure = {sid: self._exposure(svc) for sid, svc in self.services.items()}
+        #: Binaries that run with root privilege whoever executes them.
+        self.privileged = [b for b in self.binaries.values() if setuid_root(b) or dangerous_caps(b)]
 
     # ------------------------------------------------------------------ services
     def is_entrypoint(self, svc: Service) -> bool:
@@ -282,6 +298,11 @@ def classify(index: SystemIndex, pkg: Package) -> ReachInfo:
         binaries.add(b.path)
         found.append((Reachability.SETUID, [b.path, pkg.id], None))
         evidence.append(f"{b.path} is {_privilege_label(b)}")
+    loaders = _privileged_loaders(index, pkg)
+    for chain, why in loaders:
+        binaries.add(chain[0])
+        found.append((Reachability.SETUID, [*chain, pkg.id], None))
+        evidence.append(why)
     if is_kernel_package(pkg):
         found.append((Reachability.KERNEL, [pkg.id], None))
         if index.report.container is not None:
@@ -305,6 +326,7 @@ def classify(index: SystemIndex, pkg: Package) -> ReachInfo:
         primary_service=primary.id if primary else None,
         binaries=sorted(binaries),
         setuid_binaries=setuid,
+        privileged_loaders=[chain for chain, _ in loaders],
         link=weakest_link if level is Reachability.LINKED_BY_SERVICE else None,
         evidence=evidence,
     )
@@ -318,6 +340,42 @@ def classify(index: SystemIndex, pkg: Package) -> ReachInfo:
         if blocked:
             info.evidence.append(f"{sid}: network listener neutralised by {', '.join(blocked)}")
     return info
+
+
+def _privileged_loaders(index: SystemIndex, pkg: Package) -> list[tuple[list[str], str]]:
+    """``(loader path, evidence)`` for root-granting binaries that load ``pkg``'s code.
+
+    Only a recorded link edge counts: a setuid binary merely *present* on the
+    system says nothing about a library it never maps.  The C library/loader is
+    the one exception, assumed when a privileged ELF has no recorded closure
+    (link analysis off or the closure unreadable) because every dynamically
+    linked program maps it.
+    """
+    out: list[tuple[list[str], str]] = []
+    for b in index.privileged:
+        if b.package == pkg.id:
+            continue  # the package's own privileged binaries are SETUID already
+        hit = index.library_path(b, pkg.id)
+        if hit is not None:
+            chain, link = hit
+            out.append(
+                (
+                    chain,
+                    f"{chain[-1]} is loaded by the {_privilege_label(b)} binary {b.path} "
+                    f"(via {link.via}, confidence {link.confidence.value})",
+                )
+            )
+        elif is_loader_package(pkg) and b.kind == "elf" and b.needed and not b.libraries:
+            out.append(
+                (
+                    [b.path],
+                    f"{b.path} ({_privilege_label(b)}) is dynamically linked, so it maps "
+                    f"the C library/loader from {pkg.name} (assumed: no closure recorded)",
+                )
+            )
+        if len(out) >= MAX_LOADERS:
+            break
+    return out
 
 
 def _service_level(index: SystemIndex, svc: Service) -> Reachability | None:

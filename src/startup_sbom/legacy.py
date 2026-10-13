@@ -2,7 +2,10 @@
 
 Old flags are translated to a 2.x scan.  Behaviour that was unsafe in 1.x (the
 "chroot" mode bind-mounted the target over the host and executed target binaries
-as root) is never reproduced: it maps to the safe static analysis with a notice.
+as root) is never reproduced: ``--analysis-mode chroot`` maps to the 2.x chroot
+mode, which runs the target's own tools only inside an unprivileged, read-only,
+network-less bubblewrap sandbox (and falls back to static analysis when that
+sandbox is unavailable).
 """
 
 from __future__ import annotations
@@ -48,9 +51,10 @@ def run(argv: list[str] | None = None) -> int:
     err.print(notice, markup=False)
     if args.analysis_mode == "chroot":
         err.print(
-            "[legacy] chroot mode was removed (it mounted the target over the host and "
-            "executed target binaries as root). Running safe static analysis instead; "
-            "pass a `systemd-analyze plot` SVG via `startup-sbom scan --boot-timing`.",
+            "[legacy] chroot mode now runs the target's own tools only inside an "
+            "unprivileged, read-only, network-less sandbox (`startup-sbom scan --mode "
+            "chroot`); it never mounts over the host or runs anything as root. Boot "
+            "timings come from a `systemd-analyze plot` SVG via `--boot-timing`.",
             markup=False,
         )
     if args.pkg_mgr:
@@ -65,6 +69,7 @@ def run(argv: list[str] | None = None) -> int:
         epss=args.cve_analysis,
         kev=args.cve_analysis,
         eol=args.cve_analysis,
+        mode="chroot" if args.analysis_mode == "chroot" else "static",
     )
     try:
         report = scan(target, options)

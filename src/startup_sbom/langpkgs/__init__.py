@@ -18,6 +18,7 @@ from startup_sbom.binaries.elf import read_elf
 from startup_sbom.binaries.privileged import iter_files
 from startup_sbom.context import ScanContext
 from startup_sbom.langpkgs import golang, java, npm, python, rust
+from startup_sbom.log import ops
 from startup_sbom.pkgdb.base import PackageRecord
 from startup_sbom.pkgdb.ownership import FileOwnerIndex
 
@@ -129,7 +130,9 @@ def scan(
     )
     for name, run in scanners:
         try:
-            records += run()
+            found = run()
+            records += found
+            ops.info("%s: %s package(s) found", name, f"{len(found):,}")
         except Exception as exc:  # noqa: BLE001 - one ecosystem must never abort the scan
             ctx.warn(f"{name} package scan failed: {type(exc).__name__}: {exc}")
     return assign_ids(records)

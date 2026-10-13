@@ -31,8 +31,9 @@ app = typer.Typer(
     help=(
         "Map what a Linux system or container runs at boot to the packages behind it, "
         "reverse vulnerabilities into concrete threats, chain attacks and trace "
-        "supply-chain blast radius.  Read-only: nothing in the target is executed, "
-        "mounted or modified."
+        "supply-chain blast radius.  Read-only: nothing in the target is mounted or "
+        "modified, and nothing is executed unless you opt into --mode chroot, which "
+        "runs the target's own tools only inside an unprivileged, network-less sandbox."
     ),
     no_args_is_help=True,
     rich_markup_mode="rich",
@@ -65,6 +66,12 @@ class FailOn(StrEnum):
     critical = "critical"
     attend = "attend"
     act = "act"
+
+
+class Mode(StrEnum):
+    static = "static"
+    chroot = "chroot"
+    auto = "auto"
 
 
 class CdxSpec(StrEnum):
@@ -113,6 +120,13 @@ def scan(
     ] = "osv,arch",
     no_epss: Annotated[bool, typer.Option("--no-epss", help="Skip EPSS enrichment.")] = False,
     no_kev: Annotated[bool, typer.Option("--no-kev", help="Skip CISA KEV enrichment.")] = False,
+    no_derivative_fallback: Annotated[
+        bool,
+        typer.Option(
+            "--no-derivative-fallback",
+            help="Do not match rolling Debian derivatives (Kali...) against Debian testing.",
+        ),
+    ] = False,
     no_eol: Annotated[bool, typer.Option("--no-eol", help="Skip end-of-life lookup.")] = False,
     no_language_packages: Annotated[
         bool, typer.Option("--no-language-packages", help="Skip Python/npm/Go/Java/Rust.")
@@ -165,6 +179,78 @@ def scan(
             ),
         ),
     ] = False,
+    mode: Annotated[
+        Mode,
+        typer.Option(
+            "--mode",
+            help=(
+                "static: read files only (default).  chroot: also run the target's own "
+                "tools (loader, systemctl, package manager) inside an unprivileged, "
+                "read-only, network-less bubblewrap sandbox to confirm what static "
+                "analysis inferred.  auto: chroot when it is possible and safe."
+            ),
+        ),
+    ] = Mode.static,
+    live: Annotated[
+        bool | None,
+        typer.Option(
+            "--live/--no-live",
+            help="Live dashboard of stages, raw operations and findings (default: on a TTY).",
+        ),
+    ] = None,
+    journal: Annotated[
+        Path | None,
+        typer.Option(
+            "--journal",
+            help="Write every stage, raw operation, digest and analyst note as JSON lines.",
+        ),
+    ] = None,
+    ai_live: Annotated[
+        bool,
+        typer.Option(
+            "--ai-live",
+            help=(
+                "Let an LLM comment on each stage while the scan runs (needs the 'ai' "
+                "extra and a provider key; display-only, never changes the report)."
+            ),
+        ),
+    ] = False,
+    ai: Annotated[
+        bool,
+        typer.Option(
+            "--ai",
+            help=(
+                "After the scan, run the grounded multi-agent AI assessment and store it "
+                "in the report (same as `startup-sbom ai analyze`; needs the 'ai' extra)."
+            ),
+        ),
+    ] = False,
+    ai_provider: Annotated[
+        str | None, typer.Option("--ai-provider", help="AI provider (auto-detected).")
+    ] = None,
+    ai_model: Annotated[
+        str | None, typer.Option("--ai-model", help="AI model, provider:model-id.")
+    ] = None,
+    ai_profile: Annotated[
+        str, typer.Option("--ai-profile", help="--ai cost profile: cheap | balanced | quality.")
+    ] = "cheap",
+    ai_audience: Annotated[
+        str, typer.Option("--ai-audience", help="--ai audience: technical | executive.")
+    ] = "technical",
+    ai_max_cost: Annotated[
+        float, typer.Option("--ai-max-cost", min=0.0, help="--ai spending cap in USD (0: none).")
+    ] = 1.0,
+    ai_budget: Annotated[
+        float,
+        typer.Option("--ai-budget", min=0.0, help="Live analyst spending cap in USD."),
+    ] = 0.10,
+    no_cvss_impact_gate: Annotated[
+        bool,
+        typer.Option(
+            "--no-cvss-impact-gate",
+            help="Let confidentiality-only (I:N/A:N) flaws count as code execution.",
+        ),
+    ] = False,
     fail_on: Annotated[
         FailOn, typer.Option("--fail-on", help="Exit 1 when findings reach this level.")
     ] = FailOn.none,
@@ -193,6 +279,7 @@ def scan(
         nvd_api_key=os.environ.get("NVD_API_KEY") or None,
         epss=not no_epss,
         kev=not no_kev,
+        derivative_fallback=not no_derivative_fallback,
         eol=not no_eol,
         cache_dir=_cache_dir(),
         language_packages=not no_language_packages,
@@ -206,6 +293,8 @@ def scan(
         intel_max_articles=intel_max_articles,
         intel_budget=intel_budget,
         intel_articles=not no_intel_articles,
+        mode=mode.value,
+        cvss_impact_gate=not no_cvss_impact_gate,
     )
     missing = [f.value for f in chosen if f.value not in _available_formats()]
     if missing:
@@ -213,17 +302,39 @@ def scan(
             f"format(s) not available in this installation: {', '.join(missing)}"
         )
     err = Console(stderr=True)
-    show_progress = not quiet and err.is_terminal
-    if show_progress:
-        with err.status("Scanning…") as status:
-            report = run_scan(
-                target,
-                options,
-                progress=lambda e: status.update(f"[{e.index}/{e.total}] {e.stage}…"),
-                strict=debug,
-            )
+    if quiet or live is False:
+        display = "none"
+    elif live:
+        display = "live"  # degrades to plain lines when stderr is not a terminal
+    else:
+        display = "live" if err.is_terminal else "none"
+    analyst_notes: list[tuple[str, str]] = []
+    if display != "none" or journal is not None or ai_live:
+        report, analyst_notes = _scan_with_dashboard(
+            target,
+            options,
+            err,
+            journal=journal,
+            ai_live=ai_live,
+            ai_provider=ai_provider,
+            ai_model=ai_model,
+            ai_budget=ai_budget,
+            strict=debug,
+            display=display,
+        )
     else:
         report = run_scan(target, options, strict=debug)
+    if ai:
+        _ai_assessment(
+            report,
+            err,
+            quiet=quiet,
+            provider=ai_provider,
+            model=ai_model,
+            profile=ai_profile,
+            audience=ai_audience,
+            max_cost=ai_max_cost,
+        )
 
     render_opts = RenderOptions(
         cdx_spec=cdx_spec.value, vex_not_affected_unreachable=vex_unreachable_not_affected
@@ -240,6 +351,7 @@ def scan(
     else:
         if not quiet:
             print_console(report, Console(), verbose=verbose)
+            _print_analyst_notes(analyst_notes, Console())
         if chosen:
             out_dir = Path(output or "startup-sbom-out")
             outputs = {f.value: out_dir / FORMATS[f.value].default_filename for f in chosen}
@@ -250,6 +362,126 @@ def scan(
 
     if policy_violated(report, fail_on):
         raise typer.Exit(EXIT_POLICY)
+
+
+def _scan_with_dashboard(
+    target: str,
+    options: ScanOptions,
+    err: Console,
+    *,
+    journal: Path | None,
+    ai_live: bool,
+    ai_provider: str | None,
+    ai_model: str | None,
+    ai_budget: float,
+    strict: bool,
+    display: str = "auto",
+) -> tuple[Report, list[tuple[str, str]]]:
+    """Run the scan behind the live dashboard, optionally narrated by the live analyst."""
+    from startup_sbom.dashboard import ScanDashboard
+    from startup_sbom.pipeline import ActivityEvent
+    from startup_sbom.pipeline import scan as run_scan
+
+    analyst = None
+    if ai_live:
+        if options.offline:
+            raise typer.BadParameter("--ai-live needs network access", param_hint="--offline")
+        try:
+            from startup_sbom.ai.live import LiveAnalyst
+
+            analyst = LiveAnalyst(
+                lambda e: None,  # replaced below once the dashboard exists
+                provider=ai_provider,
+                model=ai_model,
+                max_cost_usd=ai_budget,
+            )
+        except StartupSBOMError as exc:
+            raise typer.BadParameter(str(exc), param_hint="--ai-live") from exc
+    with ScanDashboard(
+        target,
+        err,
+        journal=journal,
+        analyst=analyst.label if analyst else None,
+        display=display,
+    ) as board:
+
+        def on_activity(event: ActivityEvent) -> None:
+            board.activity(event)
+            if analyst is not None:
+                analyst.feed(event)
+
+        if analyst is not None:
+            analyst.sink = board.analyst_event
+            analyst.start()
+        try:
+            report = run_scan(
+                target, options, progress=board.progress, activity=on_activity, strict=strict
+            )
+        except BaseException:
+            if analyst is not None:
+                analyst.cancel()
+            raise
+        if analyst is not None:
+            analyst.close()
+    notes = list(analyst.commentary) if analyst is not None else []
+    if analyst is not None and analyst.error:
+        report.warnings.append(f"live analyst stopped: {analyst.error}")
+    return report, notes
+
+
+def _ai_assessment(
+    report: Report,
+    err: Console,
+    *,
+    quiet: bool,
+    provider: str | None,
+    model: str | None,
+    profile: str,
+    audience: str,
+    max_cost: float,
+) -> None:
+    """Run the post-scan AI assessment into ``report.ai``; a failure never sinks the scan."""
+    from rich.text import Text
+
+    from startup_sbom.textsafe import safe
+
+    if report.metadata.coverage.offline:
+        raise typer.BadParameter("--ai needs network access", param_hint="--offline")
+
+    def note(message: str) -> None:
+        if not quiet:
+            err.print(Text(f"ai: {safe(message, 300)}", style="magenta"), highlight=False)
+
+    try:
+        from startup_sbom.ai import analyze
+
+        report.ai = analyze(
+            report,
+            provider=provider,
+            model=model,
+            profile=profile,
+            audience=audience,
+            max_cost_usd=max_cost if max_cost > 0 else None,
+            stream=note,
+        )
+    except StartupSBOMError as exc:
+        message = f"AI assessment failed: {exc}"
+        report.warnings.append(safe(message, 500))
+        err.print(Text(message, style="yellow"), highlight=False)
+
+
+def _print_analyst_notes(notes: list[tuple[str, str]], console: Console) -> None:
+    from rich.text import Text
+
+    from startup_sbom.textsafe import safe
+
+    if not notes:
+        return
+    console.print(Text("\nLive analyst notes (model commentary, not part of the report)", "bold"))
+    for stage, text in notes:
+        line = Text(f"  {safe(stage, 80)}: ", style="magenta")
+        line.append(safe(text, 1500))
+        console.print(line)
 
 
 def policy_violated(report: Report, fail_on: FailOn | str) -> bool:

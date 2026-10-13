@@ -16,6 +16,7 @@ from rich.tree import Tree
 from startup_sbom.models import AttackChain, Report, Severity, SSVCDecision, Threat
 from startup_sbom.report.graphs import one_line
 from startup_sbom.report.native import (
+    analysis_mode_label,
     canonical,
     iso_z,
     listen_text,
@@ -24,6 +25,7 @@ from startup_sbom.report.native import (
     service_reachability,
     threat_sort_key,
     timestamp,
+    trigger_label,
     vuln_severity,
 )
 
@@ -179,6 +181,7 @@ def _threats(r: Report, limit: int | None) -> Table | None:
     table.add_column("Vulnerability", overflow="fold")
     table.add_column("Package", overflow="fold")
     table.add_column("Reachability", overflow="fold")
+    table.add_column("Trigger", overflow="fold")
     table.add_column("Attacker gain", overflow="fold")
     table.add_column("EPSS / KEV")
     for th in shown:
@@ -194,6 +197,7 @@ def _threats(r: Report, limit: int | None) -> Table | None:
             t(th.vulnerability, SEVERITY_STYLE[sev]),
             t(package_label(pkgs.get(th.package), th.package)),
             t(th.reachability.value.replace("_", " ")),
+            t(trigger_label(th), "dim" if not th.triggers else ""),
             Text.assemble(t(th.precondition), (" → ", "dim"), t(th.postcondition, "bold")),
             epss,
         )
@@ -386,6 +390,7 @@ def print_console(report: Report, console: Console, *, verbose: bool = False) ->
             )
     cov = r.metadata.coverage
     notes: list[Text] = [
+        Text.assemble(("Analysis mode: ", "dim"), t(analysis_mode_label(cov))),
         Text.assemble(
             ("Package databases: ", "dim"),
             t(", ".join(cov.package_databases) or "none"),
@@ -394,7 +399,7 @@ def print_console(report: Report, console: Console, *, verbose: bool = False) ->
             ("   vulnerability sources: ", "dim"),
             t(", ".join(cov.vulnerability_sources) or "none"),
             (" (offline)" if cov.offline else "", "yellow"),
-        )
+        ),
     ]
     notes += [Text.assemble(("limitation  ", "yellow"), t(x, limit=300)) for x in cov.limitations]
     notes += [Text.assemble(("warning     ", "red"), t(w, limit=300)) for w in r.warnings]

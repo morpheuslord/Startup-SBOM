@@ -32,6 +32,7 @@ from startup_sbom.binaries.linker import ChainLink, LibraryResolver, Resolution
 from startup_sbom.binaries.shebang import interpreter_chain, is_env, read_shebang
 from startup_sbom.context import ScanContext
 from startup_sbom.errors import RootFSError
+from startup_sbom.log import ops
 from startup_sbom.models import Binary, Confidence, LibraryLink
 from startup_sbom.pkgdb.ownership import FileOwnerIndex
 from startup_sbom.rootfs import FileStat, RootFS, normalize
@@ -433,8 +434,19 @@ def analyze_executables(
             missing += 1
             continue
         try:
-            if analyzer.analyse(p, link_analysis=link) is None:
+            b = analyzer.analyse(p, link_analysis=link)
+            if b is None:
                 missing += 1
+            else:
+                ops.info(
+                    "%s %s: %d librar%s%s%s",
+                    b.kind,
+                    b.path,
+                    len(b.libraries),
+                    "y" if len(b.libraries) == 1 else "ies",
+                    f", {len(b.unresolved)} unresolved" if b.unresolved else "",
+                    " [setuid]" if b.setuid else "",
+                )
         except (RootFSError, OSError, ValueError) as exc:
             missing += 1
             ctx.fs.warnings.append(f"binary analysis failed for {p}: {exc}")

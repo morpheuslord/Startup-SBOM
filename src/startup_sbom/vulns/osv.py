@@ -13,6 +13,9 @@ Rules (each verified against the live API, see ``Docs/Refactor Plan.md`` C-5):
 * ``/v1/querybatch`` (<= 1000 queries, paginated per query) returns ids only; full
   records are hydrated with ``/v1/vulns/{id}`` and cached by ``(id, modified)``.
 * Offline, query results and records are served from the cache only.
+* Rolling Debian derivatives OSV does not cover (Kali, ...) are queried against
+  Debian testing (:func:`startup_sbom.distro.derivative_fallback_ecosystem`) with
+  the vendor's revision suffix removed; those matches get reduced confidence.
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from urllib.parse import quote
 from packageurl import PackageURL
 
 from startup_sbom.context import ScanContext
+from startup_sbom.distro import derivative_fallback_ecosystem
 from startup_sbom.errors import NetworkError
 from startup_sbom.models import (
     Confidence,
@@ -53,7 +57,12 @@ from startup_sbom.vulns.normalize import (
     osv_summary,
     record_cves,
 )
-from startup_sbom.vulns.versions import compare, ecosystem_package_type, sort_versions
+from startup_sbom.vulns.versions import (
+    compare,
+    ecosystem_package_type,
+    sort_versions,
+    strip_derivative_suffix,
+)
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +87,7 @@ _SUSE_TOKEN_RE = re.compile(r"(\d+(?:\.\d+)?(?: SP\d+)?)(?:-[A-Za-z]+)?$")
 _WILL_NOT_FIX = frozenset({"end-of-life", "ignored", "will_not_fix", "will not fix", "wontfix"})
 _NOT_AFFECTED = frozenset({"not-affected", "not_affected", "dne"})
 _INVESTIGATING = frozenset({"needs-triage", "under_investigation", "undetermined"})
+_CONF_ORDER = (Confidence.LOW, Confidence.MEDIUM, Confidence.HIGH)
 
 
 # --------------------------------------------------------------------------- ecosystems
@@ -262,6 +272,8 @@ class QueryTarget:
     package: Package
     requested: str
     kind: str  # source | binary | package
+    derived_from: str | None = None  # installed version, when a derivative suffix was cut
+    fallback: bool = False  # ``requested`` is a derivative-fallback (parent) ecosystem
 
 
 def _strip_zero_epoch(v: str) -> str:
@@ -358,10 +370,23 @@ def refine_ecosystem(os: OSInfo, eco: str) -> str:
     return eco
 
 
+def fallback_ecosystem(ctx: ScanContext) -> str | None:
+    """The derivative-fallback ecosystem in use for this scan (``None`` if none/disabled)."""
+    if not ctx.options.derivative_fallback:
+        return None
+    return derivative_fallback_ecosystem(ctx.os)
+
+
 def os_ecosystems(ctx: ScanContext, ptype: PackageType) -> list[str]:
-    """Ecosystems from ``OSInfo.vuln_ecosystems`` whose version ordering fits ``ptype``."""
+    """Ecosystems from ``OSInfo.vuln_ecosystems`` whose version ordering fits ``ptype``.
+
+    A derivative-fallback ecosystem is dropped when ``derivative_fallback`` is off.
+    """
     out = []
+    skip = None if ctx.options.derivative_fallback else derivative_fallback_ecosystem(ctx.os)
     for eco in ctx.os.vuln_ecosystems:
+        if eco == skip:
+            continue
         etype = ecosystem_package_type(eco)
         if etype == ptype or (etype is None and eco and eco not in LANGUAGE_ECOSYSTEMS.values()):
             out.append(refine_ecosystem(ctx.os, eco))
@@ -378,6 +403,8 @@ def plan_queries(
         if q.name and q.version:
             plan.setdefault(q, []).append(t)
 
+    fallback = fallback_ecosystem(ctx)
+    vendors = (ctx.os.id,)
     for pkg in packages:
         if pkg.type in LANGUAGE_ECOSYSTEMS:
             eco = LANGUAGE_ECOSYSTEMS[pkg.type]
@@ -391,6 +418,13 @@ def plan_queries(
             for req in os_ecosystems(ctx, pkg.type):
                 qeco = query_ecosystem(req)
                 src = pkg.source_name or pkg.name
+                if req == fallback:
+                    installed = source_version(pkg)
+                    version = strip_derivative_suffix(installed, vendors)
+                    derived = installed if version != installed else None
+                    target = QueryTarget(pkg, req, "source", derived, fallback=True)
+                    add(OsvQuery(qeco, src, version), target)
+                    continue
                 add(OsvQuery(qeco, src, source_version(pkg)), QueryTarget(pkg, req, "source"))
                 if pkg.type == PackageType.RPM and src != pkg.name:
                     add(
@@ -581,6 +615,16 @@ class OsvSource(VulnerabilitySource):
             entries = kept
         elif not entries:
             confidence, note = Confidence.MEDIUM, " (no affected entry for this ecosystem)"
+        if target.fallback:
+            # Parent-distribution advisories applied to a derivative: the vendor may
+            # ship different builds/patches.  A package carrying the vendor's own
+            # revision suffix was modified by it, so its match is weaker still.
+            if target.derived_from is not None:
+                confidence = Confidence.LOW
+                note += f" (derivative fallback; {target.derived_from} compared as {q.version})"
+            else:
+                confidence = min(confidence, Confidence.MEDIUM, key=_CONF_ORDER.index)
+                note += " (derivative fallback)"
 
         fixed = fixed_versions(entries, q.version, ptype)
         status = VulnStatus.AFFECTED if fixed else distro_status(entries)

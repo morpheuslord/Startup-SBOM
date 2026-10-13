@@ -13,6 +13,7 @@ from startup_sbom.models import Report, Severity, Threat
 from startup_sbom.report.graphs import mermaid_chain, one_line
 from startup_sbom.report.native import (
     RenderOptions,
+    analysis_mode_label,
     canonical,
     iso_z,
     listen_text,
@@ -21,6 +22,7 @@ from startup_sbom.report.native import (
     service_reachability,
     threat_sort_key,
     timestamp,
+    trigger_label,
     vuln_reachability,
     vuln_score,
     vuln_severity,
@@ -288,6 +290,7 @@ def render_markdown(report: Report, options: RenderOptions) -> str:
                     md(t.vulnerability),
                     md(package_label(pkgs.get(t.package), t.package)),
                     md(t.reachability.value.replace("_", " ")),
+                    md(trigger_label(t), 120),
                     f"{md(t.precondition)} → {md(t.postcondition)}",
                     _pct(tv.epss if tv else None),
                     "yes" if tv and tv.kev else "",
@@ -300,6 +303,7 @@ def render_markdown(report: Report, options: RenderOptions) -> str:
                 "Vulnerability",
                 "Package",
                 "Reachability",
+                "Trigger",
                 "Attacker gain",
                 "EPSS",
                 "KEV",
@@ -489,6 +493,7 @@ def render_markdown(report: Report, options: RenderOptions) -> str:
     out += [
         "## Coverage and limitations",
         "",
+        f"- Analysis mode: {md(analysis_mode_label(cov))}",
         f"- Package databases: {md(', '.join(cov.package_databases) or 'none')}",
         f"- Init systems: {md(', '.join(cov.init_systems) or 'none')}",
         f"- Vulnerability sources: {md(', '.join(cov.vulnerability_sources) or 'none')}"

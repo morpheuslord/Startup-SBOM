@@ -41,6 +41,48 @@ DEBIAN_CODENAMES: dict[str, str] = {
     "duke": "15",
 }
 
+#: Codename of the current Debian *testing* suite (distro-info-data ``debian.csv``:
+#: the first codename without a release date).  Rolling Debian derivatives are
+#: matched against it (see :func:`derivative_fallback_ecosystem`).  Bump it when
+#: forky is released and the next suite becomes testing.
+DEBIAN_TESTING_CODENAME = "forky"
+
+#: Debian derivatives that only ship a rolling release built from Debian testing.
+#: Kali's os-release says ``VERSION_CODENAME=kali-rolling`` (``VERSION_ID`` is a
+#: snapshot date such as ``2025.3``), so it is listed explicitly as well.
+_ROLLING_DEBIAN_DERIVATIVES = frozenset({"kali"})
+_ROLLING_MARKER = re.compile(r"(?:^|[-_.\s])(?:rolling|testing|sid|unstable)(?:$|[-_.\s])")
+
+#: ``ID`` values that :func:`_ecosystems` maps to an OSV ecosystem of their own (or
+#: deliberately leaves unmapped); everything else may use the derivative fallback.
+_NATIVE_IDS = frozenset(
+    {
+        "debian",
+        "raspbian",
+        "ubuntu",
+        "alpine",
+        "rhel",
+        "rocky",
+        "almalinux",
+        "sles",
+        "sles_sap",
+        "sle-micro",
+        "sl-micro",
+        "opensuse",
+        "opensuse-leap",
+        "opensuse-leap-micro",
+        "opensuse-tumbleweed",
+        "azurelinux",
+        "mariner",
+        "openeuler",
+        "mageia",
+        "wolfi",
+        "chainguard",
+        "minimos",
+        "alpaquita",
+    }
+)
+
 #: Ubuntu codename → release (distro-info-data ``ubuntu.csv``).
 UBUNTU_CODENAMES: dict[str, str] = {
     "trusty": "14.04",
@@ -286,7 +328,39 @@ def _ecosystems(info: OSInfo, hints: dict[str, str] | None = None) -> list[str]:
             codename = (info.version_codename or "").lower()
             if codename in DEBIAN_CODENAMES:
                 out.append(f"Debian:{DEBIAN_CODENAMES[codename]}")
+            elif fallback := derivative_fallback_ecosystem(info):
+                out.append(fallback)
     return out
+
+
+def derivative_fallback_ecosystem(info: OSInfo) -> str | None:
+    """Parent OSV ecosystem used for a rolling Debian derivative, else ``None``.
+
+    OSV.dev has no ecosystem for Kali, Parrot (rolling) and similar distributions,
+    but their archives are rebuilt continuously from Debian *testing*.  Such a
+    system is therefore matched against the advisories of the Debian testing
+    release, ``Debian:<n>`` with ``n`` the release number testing will get
+    (``forky`` -> ``Debian:14``) -- the same string a plain ``forky/sid`` Debian
+    install maps to here.  An unversioned ``Debian`` query is not used: it would
+    accept affected ranges of *every* Debian release (old-stable entries without a
+    fix included), and a stable release's ranges are pinned to ``+debNuM`` security
+    builds a rolling system never installs.
+
+    Only derivatives that are evidently rolling qualify (a known rolling ``ID`` or
+    a ``rolling``/``testing``/``sid`` codename); a derivative pinned to a stable
+    Debian release under its own codename (Parrot ``lory``, Devuan ``daedalus``)
+    is not guessed at.  Ubuntu derivatives are mapped exactly through
+    ``UBUNTU_CODENAME`` and never take this path.  Matches made this way carry
+    reduced confidence (see :mod:`startup_sbom.vulns.osv`).
+    """
+    if info.id in _NATIVE_IDS or "debian" not in info.id_like or "ubuntu" in info.id_like:
+        return None
+    codename = (info.version_codename or "").lower()
+    if codename in DEBIAN_CODENAMES:
+        return None  # the exact parent release is known: not a fallback
+    if info.id in _ROLLING_DEBIAN_DERIVATIVES or _ROLLING_MARKER.search(codename):
+        return f"Debian:{DEBIAN_CODENAMES[DEBIAN_TESTING_CODENAME]}"
+    return None
 
 
 def osv_ecosystems(os: OSInfo) -> list[str]:

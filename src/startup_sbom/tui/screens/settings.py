@@ -52,6 +52,7 @@ BOOL_FIELDS: tuple[tuple[str, str], ...] = (
     ("prefetch_intel", "Prefetch threat intel"),
     ("intel_articles", "Fetch articles"),
     ("ai_enabled", "Run AI analysis after the scan"),
+    ("ai_live", "Live analyst (LLM comments on each stage)"),
 )
 SOURCE_LABELS = (("osv", "OSV.dev"), ("arch", "Arch security tracker"), ("nvd", "NVD (CPE)"))
 PLATFORMS = ["linux/amd64", "linux/arm64", "linux/arm64/v8", "linux/arm/v7", "linux/386"]
@@ -62,6 +63,7 @@ ONLINE_ONLY = (
     "intel_max_articles",
     "intel_budget",
     "ai_enabled",
+    "ai_live",
     "ai_provider",
     "ai_model",
     "ai_profile",
@@ -171,10 +173,14 @@ class SettingsScreen(Screen[None]):
             yield Label("AI analyst (optional)", classes="section")
             with Horizontal(classes="row"):
                 yield cb["ai_enabled"]
+                yield cb["ai_live"]
+            with Horizontal(classes="row"):
                 yield Label("Provider")
                 yield Select(
                     provider_opts, value=provider_value, allow_blank=False, id="ai_provider"
                 )
+                yield Label("Model")
+                yield Input(v.ai_model, placeholder="provider default", id="ai_model")
             with Horizontal(classes="row"):
                 yield Label("Profile")
                 yield Select(
@@ -192,12 +198,12 @@ class SettingsScreen(Screen[None]):
                 )
                 yield Label("Max cost (USD)")
                 yield Input(f"{v.ai_max_cost:g}", type="number", id="ai_max_cost")
-                yield Label("Model")
-                yield Input(v.ai_model, placeholder="provider default", id="ai_model")
             yield Static(
                 Text(
                     "API keys are read from the environment only and are never typed or stored "
-                    "here." + ("" if providers else " (AI module not installed)"),
+                    "here.  The live analyst is display-only: it narrates each stage while the "
+                    "scan runs and never changes the report; the max cost caps each AI run."
+                    + ("" if providers else " (AI module not installed)"),
                     style="dim",
                 ),
                 id="ai-hint",
