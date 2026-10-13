@@ -112,3 +112,32 @@ RLO = chr(0x202E)
 def test_stage_text_is_sanitised(bad: str) -> None:
     _analyst, events = _run([(bad, bad)])
     assert all(ESC not in e.stage and RLO not in e.stage for e in events)
+
+
+@pytest.mark.parametrize(
+    "model",
+    [
+        "anthropic:claude-haiku-4-5",  # budget-based thinking ("low" = 2048 tokens)
+        "anthropic:claude-sonnet-5",
+        "openai:gpt-6-luna",
+    ],
+)
+def test_thinking_budget_always_fits_inside_max_tokens(
+    model: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Anthropic rejects max_tokens <= thinking.budget_tokens (seen live with Haiku 4.5)."""
+    from pydantic_ai.profiles.anthropic import ANTHROPIC_THINKING_BUDGET_MAP
+
+    from startup_sbom.ai import live
+    from startup_sbom.ai.providers import provider_of
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    _agent, settings, _guard, _label = live._build(None, model, "cheap", 0.1, None)
+    assert settings is not None
+    thinking = settings.get("thinking")
+    if thinking:
+        assert thinking == live.THINKING_LEVEL
+        if provider_of(model) == "anthropic":
+            assert settings["max_tokens"] > ANTHROPIC_THINKING_BUDGET_MAP[thinking]
+    assert settings["max_tokens"] >= live.MAX_TOKENS
