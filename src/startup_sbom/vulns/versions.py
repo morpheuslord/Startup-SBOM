@@ -17,6 +17,7 @@ distribution tooling:
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from functools import cmp_to_key
 from itertools import zip_longest
 
@@ -541,3 +542,29 @@ def sort_versions(ptype: PackageType, versions: list[str]) -> list[str]:
         return compare(ptype, x, y)
 
     return sorted(sorted(set(versions)), key=cmp_to_key(cmp))
+
+
+# --------------------------------------------------------------------------- derivatives
+def strip_derivative_suffix(version: str, vendors: Iterable[str]) -> str:
+    """Drop a derivative's own revision marker from a dpkg ``version``.
+
+    Rolling Debian derivatives rebuild Debian packages under a vendor suffix
+    (``1.2.3-1+kali1``, ``2.4-0kali2``, ``5.1-2parrot1``); to be compared against
+    the parent's advisory ranges the suffix is removed (``1.2.3-1``, ``2.4-0``).
+
+    Conservative by construction: the result is returned only if it sorts *at or
+    below* ``version`` in dpkg order, so a package can only look less patched,
+    never more.  ``1.2.3-1~kali1`` (which sorts *before* ``1.2.3-1``) is therefore
+    kept as is -- dpkg ordering already places it below Debian's ``1.2.3-1``.
+    """
+    names = sorted({v.lower() for v in vendors if v and v.isascii()}, key=len, reverse=True)
+    if not names:
+        return version
+    alts = "|".join(re.escape(n) for n in names)
+    m = re.search(rf"[+.~]?(?:{alts})[0-9.]*(?:\+b\d+)?$", version, re.IGNORECASE)
+    if m is None:
+        return version
+    stripped = version[: m.start()].rstrip("-")
+    if not stripped or stripped.endswith(":") or dpkg_compare(stripped, version) > 0:
+        return version
+    return stripped

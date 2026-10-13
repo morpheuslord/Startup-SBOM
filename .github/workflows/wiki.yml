@@ -1,0 +1,84 @@
+name: Wiki
+
+# Mirrors the documentation into the GitHub wiki. `Docs/` (rendered by MkDocs
+# Material to GitHub Pages in ci.yml) stays the single source of truth:
+# tools/docs_to_wiki.py converts the nav pages into wiki pages, a generated
+# _Sidebar.md and _Footer.md, and --prune deletes wiki pages that no longer
+# have a source. A commit is pushed only when the generated wiki changed.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Docs/**"
+      - "mkdocs.yml"
+      - "tools/docs_to_wiki.py"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Serialise pushes to the wiki; never cancel a sync half-way.
+  group: wiki
+  cancel-in-progress: false
+
+env:
+  UV_VERSION: "0.13.0"
+  PYTHONUTF8: "1"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  sync:
+    name: sync Docs/ to the wiki
+    # Only the canonical repository owns the wiki; forks skip.
+    if: github.repository == 'morpheuslord/Startup-SBOM'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # push to the repository's wiki
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check out the wiki
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ github.repository }}.wiki
+          path: wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # The token is passed to the single push step below instead of
+          # being left in wiki/.git/config while the converter runs.
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false # never restore caches in a publishing workflow
+      - name: Convert Docs/ into wiki pages
+        # stdlib-only script: no project install, no dependencies resolved.
+        run: uv run --no-project --python 3.13 tools/docs_to_wiki.py --docs Docs --mkdocs mkdocs.yml --out wiki --prune
+      - name: Commit and push if the wiki changed
+        working-directory: wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git add --all
+          if git diff --cached --quiet; then
+            echo "The wiki is already up to date."
+            exit 0
+          fi
+          git diff --cached --stat
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit --quiet -m "Sync wiki from Docs/ at ${GITHUB_SHA::12}"
+          # The credential is handed to this one `git push` through git's GIT_CONFIG_*
+          # environment variables: never echoed or masked-by-printing (so it never reaches
+          # the log), never on a command line, never written to wiki/.git/config.
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" \
+            git push origin HEAD

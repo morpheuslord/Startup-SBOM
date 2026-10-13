@@ -36,7 +36,9 @@ nav:
       - Package Databases: package-databases.md
       - Init Systems: init-systems.md
       - Vulnerabilities and Threats: vulnerabilities-and-threats.md
+      - Chroot Mode: chroot-mode.md
   - Outputs: outputs.md
+  - Live Scanning: live-scanning.md
   - Intelligence and AI: intelligence-and-ai.md
   - Integration: integration.md
 

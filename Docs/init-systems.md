@@ -1,6 +1,6 @@
 # Init Systems
 
-The point of Startup-SBOM is knowing what a system *would run* — so service-manager analysis is the heart of the scan. `initsys.discover_all()` (`src/startup_sbom/initsys/`) runs every analyser whose `detect()` matches, then reconciles the results into one coherent view: the manager that is actually **PID 1** (the container entry process when scanning a container, otherwise `/sbin/init` resolved inside the root) keeps its automatic activations, while a manager that is merely installed — or launched *by* another service, such as an `ENTRYPOINT` running `supervisord` or a systemd unit running `runsvdir` — has its activations downgraded to manual (with the reason in the service's evidence) or inherits the launching service's activation. Everything is read from configuration files only, through the root-confined VFS ([Architecture](architecture.md)); nothing is ever executed.
+The point of Startup-SBOM is knowing what a system *would run* — so service-manager analysis is the heart of the scan. `initsys.discover_all()` (`src/startup_sbom/initsys/`) runs every analyser whose `detect()` matches, then reconciles the results into one coherent view: the manager that is actually **PID 1** (the container entry process when scanning a container, otherwise `/sbin/init` resolved inside the root) keeps its automatic activations, while a manager that is merely installed — or launched *by* another service, such as an `ENTRYPOINT` running `supervisord` or a systemd unit running `runsvdir` — has its activations downgraded to manual (with the reason in the service's evidence) or inherits the launching service's activation. Cron jobs and udev rule programs are treated as services too, kept automatic only when their daemon is started ([see below](#scheduled-jobs-and-device-rules-need-their-daemon)). Everything is read from configuration files only, through the root-confined VFS ([Architecture](architecture.md)); nothing is executed. (In [chroot mode](chroot-mode.md) the target's own `systemctl` is additionally asked, inside a sandbox, to confirm unit states.)
 
 All analysers share `initsys/cmdline.py`, which resolves a configured argv to the program that actually runs: `argv[0]` is canonicalised in-image (bare names through a PATH search *inside* the root) and well-known wrappers — tini, dumb-init, gosu, su-exec, s6-setuidgid, chpst, setpriv, runuser, env, nice, `sh -c "…"`, execline chain-loaders — are peeled off until the real target is reached, using a small, non-executing POSIX shell lexer.
 
@@ -44,6 +44,31 @@ Boot *timing* can be attached from a user-supplied `systemd-analyze plot` SVG or
 ## Container entrypoints
 
 `initsys/container.py` turns the image config into the entry "service": argv is `Entrypoint + Cmd` with runtime-exact semantics (a shell-form entrypoint receives the `Cmd` words as `$0 $1 …`), bare names resolved through the default OCI PATH, relative paths against `WorkingDir`, and wrappers (tini, dumb-init, `sh -c`, gosu/su-exec) unwrapped. Identity comes from `User` (empty = root) adjusted by identity-dropping wrappers; the sandbox comes from the runtime fields when scanning a live container and Docker's defaults otherwise; `ExposedPorts` become network listeners. Environment variable *values* are never recorded.
+
+## Cron
+
+`initsys/cron.py` turns scheduled jobs into services (`init_system: cron`), read statically from:
+
+* `/etc/crontab` and `/etc/cron.d/*` — the system format: five schedule fields (or an `@` keyword), then the **user**, then the command;
+* per-user crontabs in `/var/spool/cron/crontabs/<user>` (Debian) and `/var/spool/cron/<user>` (RHEL, Arch), where the file name is the user;
+* executables in `/etc/cron.hourly`, `/etc/cron.daily`, `/etc/cron.weekly` and `/etc/cron.monthly`, which `run-parts` / anacron run as root. As with Debian's `run-parts`, only files whose names consist of letters, digits, `_` and `-` and that are executable count, so `foo.sh`, `foo.dpkg-old` and disabled scripts are skipped.
+
+Environment assignments and comments are skipped, and a command is cut at the first unescaped `%` (cron passes the rest as stdin). The command line goes through the same non-executing shell parser and wrapper unwrapping as every other analyser, and each job becomes one service with id `cron:<file>:<line>` (or `cron:<path>` for periodic scripts) running as the job's user. Scheduled jobs get `timer` activation, reported as the `cron` trigger ([Vulnerabilities and Threats](vulnerabilities-and-threats.md#triggers)); `@reboot` jobs get `boot` activation. Reads are bounded (256 KiB per crontab, 500 files, 2,000 jobs); what is cut off is recorded as a coverage limitation.
+
+## udev
+
+`initsys/udev.py` finds the programs the device manager runs **as root** when matching device events occur. Rule files are read from `/etc/udev/rules.d`, `/run/udev/rules.d`, `/usr/lib/udev/rules.d` and `/lib/udev/rules.d` with udev's precedence — a file in `/etc` overrides the same file name in `/run`, which overrides `/usr/lib` — and applied in file-name order. Every program a rule executes — `RUN+=` / `RUN{program}+=`, `PROGRAM==` and `IMPORT{program}=` — becomes a service (`init_system: udev`, `device` activation, user root), aggregated per executable with up to ten `file:line` rule locations as evidence. Builtins (`RUN{builtin}`, `IMPORT{builtin}`) execute no program and are skipped, as are commands whose program name is built from `$`/`%` substitutions. Relative program names are looked up in `/usr/lib/udev` and `/lib/udev`.
+
+## Scheduled jobs and device rules need their daemon
+
+Cron jobs and udev programs only run while their daemon runs, so they are excluded from the PID-1 reconciliation and gated by `initsys.gate_scheduled_jobs()` instead. A job keeps its automatic activation only if some **automatically started service** — of any init system, container entrypoints included — runs a matching daemon:
+
+| Jobs | Daemons recognised (by executable or invoked name) |
+|---|---|
+| cron | `cron`, `crond`, `cronie`, `fcron`, `dcron`, `bcron`, `anacron`, `cronnext` |
+| udev | `systemd-udevd`, `udevd`, `eudev`, `mdev` |
+
+BusyBox applets match by their invoked name (`crond`, `mdev`). When a daemon is found, every job records `executed by the cron daemon of <service>` and inherits that service's boot path. When none is, every job is downgraded to `manual` with the evidence `not run: no cron daemon is started automatically` (or `udev daemon`). A container image whose entry process does not start a cron daemon therefore reports its crontabs, but no `cron` triggers.
 
 ## Declared network listeners
 

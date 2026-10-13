@@ -17,6 +17,7 @@ is missing.
 from __future__ import annotations
 
 import importlib
+import os
 from typing import TYPE_CHECKING, Any
 
 from startup_sbom.errors import StartupSBOMError
@@ -37,6 +38,10 @@ __all__ = [
     "render_assessment",
     "require",
 ]
+
+# pydantic-ai prints an observability banner on stderr at the first run; it would tear
+# through the live scan dashboard and the TUI.  The user can still opt back in.
+os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 
 INSTALL_HINT = "pip install 'startup-sbom[ai]'"
 SERVER_INSTALL_HINT = "pip install 'startup-sbom[agents-server]'"

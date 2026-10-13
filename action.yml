@@ -11,7 +11,7 @@ branding:
 #     contents: read
 #     security-events: write   # only needed when upload-sarif is true
 #   steps:
-#     - uses: morpheuslord/Startup-SBOM@<full-commit-sha> # v2.0.0
+#     - uses: morpheuslord/Startup-SBOM@<full-commit-sha> # v2.0.1
 #       with:
 #         target: docker-archive:image.tar
 #         fail-on: high
@@ -44,7 +44,7 @@ inputs:
     required: false
     default: ""
   version:
-    description: "startup-sbom version to install from PyPI (e.g. 2.0.0). Empty = run the code at the ref this action was pinned to."
+    description: "startup-sbom version to install from PyPI (e.g. 2.0.1). Empty = run the code at the ref this action was pinned to."
     required: false
     default: ""
   python-version:

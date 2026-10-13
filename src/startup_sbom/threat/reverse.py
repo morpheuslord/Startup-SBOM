@@ -35,6 +35,7 @@ from startup_sbom.threat.reachability import (
     service_user,
     setuid_root,
 )
+from startup_sbom.threat.triggers import NO_TRIGGER, build_triggers, describe_trigger
 
 SKIP_STATUS = {VulnStatus.FIXED, VulnStatus.NOT_AFFECTED}
 #: CWE numbers whose local exploitation yields root (privilege escalation family).
@@ -76,7 +77,9 @@ def reverse_vulnerabilities(report: Report, ctx: ScanContext) -> list[Threat]:
         facts = best(vuln)
         if not facts.known:
             no_cvss.append(vuln.id)
-        threats.append(_build(report, index, vuln, pkg, info, facts))
+        threats.append(
+            _build(report, index, vuln, pkg, info, facts, impact_gate=ctx.options.cvss_impact_gate)
+        )
     if unknown_pkg:
         ctx.warn(
             f"threat: {len(unknown_pkg):,} vulnerabilit{'y' if len(unknown_pkg) == 1 else 'ies'} "
@@ -108,12 +111,17 @@ def _build(
     pkg: Package,
     info: ReachInfo,
     facts: VectorFacts,
+    *,
+    impact_gate: bool = True,
 ) -> Threat:
     consequences, cons_evidence = _consequences(vuln, facts)
     primary = index.services.get(info.primary_service or "")
     run_as = service_user(primary) if primary else None
     precondition = _precondition(facts, info)
-    postcondition, post_reason = _postcondition(vuln, pkg, info, facts, consequences, run_as)
+    postcondition, post_reason = _postcondition(
+        vuln, pkg, info, facts, consequences, run_as, precondition, impact_gate=impact_gate
+    )
+    triggers = build_triggers(index, info, pkg)
 
     techniques, tech_label, tech_sources = _techniques(vuln, facts, consequences, info)
     stride = _stride(consequences, facts)
@@ -147,6 +155,7 @@ def _build(
         title=_title(vuln, pkg, info, postcondition),
         reachability=info.level,
         reachability_paths=[list(p) for p in info.paths],
+        triggers=triggers,
         services=list(info.services),
         binaries=list(info.binaries),
         attack_vector=facts.attack_vector,
@@ -182,6 +191,8 @@ def _build(
         *cons_evidence,
         *mit_evidence,
         f"attacker state: {precondition} → {postcondition} ({post_reason})",
+        *(f"trigger: {describe_trigger(t)}" for t in triggers),
+        *([] if triggers else [NO_TRIGGER]),
         *(f"SSVC {r}" for r in ssvc_reasons),
         *(f"ATT&CK via {s}" for s in tech_sources),
     ]
@@ -264,6 +275,16 @@ def _local_state(info: ReachInfo) -> str:
     return "local"
 
 
+_SERVICE_LEVELS = frozenset(
+    {
+        Reachability.NETWORK_SERVICE,
+        Reachability.BOOT_SERVICE,
+        Reachability.LINKED_BY_SERVICE,
+        Reachability.ON_DEMAND_SERVICE,
+    }
+)
+
+
 def _postcondition(
     vuln: Vulnerability,
     pkg: Package,
@@ -271,36 +292,69 @@ def _postcondition(
     facts: VectorFacts,
     consequences: set[Consequence],
     run_as: str | None,
+    precondition: str,
+    *,
+    impact_gate: bool = True,
 ) -> tuple[str, str]:
+    """Attacker state after exploitation, and why.
+
+    The state only advances when the flaw grants control (code execution,
+    authentication bypass, supply-chain implant) or is a privilege-escalation
+    weakness **and** something on the system runs the vulnerable code with more
+    privilege than the attacker holds: a root service, a setuid-root/capability
+    binary that ships or loads it, or the kernel.  A package that is merely
+    installed is exploited with the attacker's own privileges, so the state
+    stays where it was however the advisory is worded.
+    """
     cwe_nums = {n for c in vuln.cwes if (n := cwe.cwe_number(c)) is not None}
-    gains_root = (
-        is_kernel_package(pkg)
-        or any(setuid_root(b) for b in info.setuid_binaries)
-        or any(dangerous_caps(b) for b in info.setuid_binaries)
-        or bool(cwe_nums & PRIVESC_CWES)
-        or Consequence.PRIVESC in consequences
+    privesc_signal = bool(cwe_nums & PRIVESC_CWES) or Consequence.PRIVESC in consequences
+    control = bool(
+        consequences & {Consequence.RCE, Consequence.SUPPLY_CHAIN, Consequence.AUTH_BYPASS}
     )
-    control = consequences & {Consequence.RCE, Consequence.SUPPLY_CHAIN, Consequence.AUTH_BYPASS}
-    if not control and not gains_root:
-        # Disclosure / DoS / tampering only: attacker state does not advance.
-        state = _as_precondition(info, run_as)
-        return state, "information/availability impact only; no change of attacker state"
-    if gains_root and info.level in (
-        Reachability.KERNEL,
-        Reachability.SETUID,
-    ):
-        return "root", "privilege-escalation weakness on a kernel/setuid-root component"
-    if gains_root and info.level in (Reachability.BOOT_SERVICE, Reachability.ON_DEMAND_SERVICE):
+    unchanged = (
+        precondition if info.level is Reachability.INSTALLED else _as_precondition(info, run_as)
+    )
+    if impact_gate and facts.known and facts.integrity == "none" and facts.availability == "none":
+        return unchanged, (
+            "CVSS impact is confidentiality-only (I:N/A:N): disclosure, not code "
+            "execution or privilege gain"
+        )
+    privileged = _privileged_path(pkg, info)
+    # Integrity-high corruption inside a root-run component (kernel, setuid binary,
+    # library it loads) is how privilege escalations are scored, whatever the CWE.
+    corrupts_privileged = bool(privileged) and facts.known and facts.integrity == "high"
+    if not control and not privesc_signal and not corrupts_privileged:
+        return unchanged, "information/availability impact only; no change of attacker state"
+    local_vector = facts.attack_vector in ("local", "unknown")
+    if info.level in _SERVICE_LEVELS and info.primary_service:
         if run_as in ("root", None):
-            return "root", "privilege escalation in a service running as root"
-        return "root", "privilege-escalation weakness reachable from the service account"
-    if run_as and run_as not in ("root",):
+            return "root", "code execution in a service running as root"
+        if privileged and local_vector:
+            return "root", f"{privileged}; the service account only needs local access"
         return f"local:{run_as}", f"code execution as the service account {run_as}"
-    if info.primary_service:
-        return "root", "code execution in a service running as root"
-    if gains_root:
-        return "root", "privilege-escalation weakness"
-    return "local", "code execution as a local user"
+    if privileged:
+        return "root", privileged
+    if info.level is Reachability.SETUID:
+        return unchanged, (
+            "the shipped privileged binary is setgid or setuid to a non-root owner: no root gain"
+        )
+    return unchanged, (
+        "installed only: no service, setuid binary or kernel runs this code, so "
+        "exploitation keeps the attacker's own privileges"
+    )
+
+
+def _privileged_path(pkg: Package, info: ReachInfo) -> str | None:
+    """Why exploiting ``pkg`` runs attacker-controlled code as root (``None``: it does not)."""
+    if is_kernel_package(pkg):
+        return "privilege-escalation weakness in the kernel"
+    for b in info.setuid_binaries:
+        if setuid_root(b) or dangerous_caps(b):
+            return f"privilege-escalation weakness in the privileged binary {b.path}"
+    if info.privileged_loaders:
+        chain = info.privileged_loaders[0]
+        return f"vulnerable code is loaded by the privileged binary {chain[0]}"
+    return None
 
 
 def _as_precondition(info: ReachInfo, run_as: str | None) -> str:

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 
 from textual.message import Message
@@ -31,7 +32,7 @@ class TaskDone(Message):
 
 
 class ScanProgress(Message):
-    """A pipeline stage started."""
+    """A pipeline stage started (``at`` is the scan thread's monotonic clock)."""
 
     bubble = False
 
@@ -40,6 +41,38 @@ class ScanProgress(Message):
         self.stage = stage
         self.index = index
         self.total = total
+        self.at = time.monotonic()
+
+
+class ScanActivity(Message):
+    """What the scan is doing: a raw operation, a stage digest, a failure or a warning.
+
+    ``kind`` mirrors :class:`~startup_sbom.pipeline.ActivityEvent` (``op``,
+    ``digest``, ``stage-failed``, ``warning``) plus ``phase`` for the TUI's own
+    post-scan steps.  Every string is untrusted scan data.
+    """
+
+    bubble = False
+
+    def __init__(self, stage: str, kind: str, message: str) -> None:
+        super().__init__()
+        self.stage = stage
+        self.kind = kind
+        self.message = message
+        self.at = time.monotonic()
+
+
+class ScanAnalyst(Message):
+    """Live analyst output (``kind``: info/start/thinking/text/done/error/unavailable)."""
+
+    bubble = False
+
+    def __init__(self, stage: str, kind: str, text: str) -> None:
+        super().__init__()
+        self.stage = stage
+        self.kind = kind
+        self.text = text
+        self.at = time.monotonic()
 
 
 class ScanLog(Message):

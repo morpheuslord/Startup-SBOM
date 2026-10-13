@@ -157,6 +157,7 @@ class StartupSbomApp(App[None]):
         policy_violated: bool = False,
         ai_settings: AISettings | None = None,
         replace: bool = False,
+        analyst_notes: list[tuple[str, str]] | None = None,
     ) -> None:
         """Push (or switch to) a results browser for ``report``."""
         from startup_sbom.tui.screens.results import ResultsScreen
@@ -167,6 +168,7 @@ class StartupSbomApp(App[None]):
             fail_on=fail_on,
             policy_violated=policy_violated,
             ai_settings=ai_settings,
+            analyst_notes=analyst_notes,
         )
         if replace:
             self.switch_screen(screen)
@@ -189,6 +191,7 @@ class StartupSbomApp(App[None]):
             policy_violated=result.policy_violated,
             ai_settings=request.ai,
             replace=isinstance(self.screen, ScanScreen),
+            analyst_notes=result.analyst_notes,
         )
         if result.policy_violated:
             self.notify(

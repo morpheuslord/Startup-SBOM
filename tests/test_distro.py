@@ -7,7 +7,13 @@ import sys
 import pytest
 
 from fsbuilder import Dir, Symlink
-from startup_sbom.distro import identify, os_family, osv_ecosystems, parse_os_release
+from startup_sbom.distro import (
+    derivative_fallback_ecosystem,
+    identify,
+    os_family,
+    osv_ecosystems,
+    parse_os_release,
+)
 from startup_sbom.models import OSInfo
 
 needs_symlinks = pytest.mark.skipif(sys.platform == "win32", reason="symlinks need privileges")
@@ -96,7 +102,7 @@ def _osr(**fields: str) -> str:
             "debian",
             ["Debian:12"],
         ),
-        ({"ID": "kali", "ID_LIKE": "debian", "VERSION_ID": "2025.3"}, "debian", []),
+        ({"ID": "kali", "ID_LIKE": "debian", "VERSION_ID": "2025.3"}, "debian", ["Debian:14"]),
         ({"ID": "mystery"}, "unknown", []),
     ],
 )
@@ -264,3 +270,73 @@ def test_osv_ecosystems_helper_and_family():
     assert osv_ecosystems(OSInfo()) == []
     assert os_family("pop", ["ubuntu", "debian"]) == "debian"
     assert os_family("x", ["opensuse-foo"]) == "suse"
+
+
+# --------------------------------------------------------------------------- derivative fallback
+KALI_OS_RELEASE = _osr(
+    PRETTY_NAME="Kali GNU/Linux Rolling",
+    NAME="Kali GNU/Linux",
+    VERSION_ID="2025.3",
+    VERSION="2025.3",
+    VERSION_CODENAME="kali-rolling",
+    ID="kali",
+    ID_LIKE="debian",
+)
+
+
+def test_kali_rolling_falls_back_to_debian_testing(make_dir_fs):
+    info = identify(make_dir_fs({"/etc/os-release": KALI_OS_RELEASE}))
+    assert (info.id, info.id_like, info.family) == ("kali", ["debian"], "debian")
+    assert info.vuln_ecosystems == ["Debian:14"]  # forky = current Debian testing
+    assert derivative_fallback_ecosystem(info) == "Debian:14"
+
+
+@pytest.mark.parametrize(
+    ("info", "expected"),
+    [
+        # rolling derivatives (known id, or a rolling/testing/sid codename)
+        (OSInfo(id="kali", id_like=["debian"], version_codename="kali-rolling"), "Debian:14"),
+        (OSInfo(id="parrot", id_like=["debian"], version_codename="rolling"), "Debian:14"),
+        (OSInfo(id="foo", id_like=["debian"], version_codename="foo-testing"), "Debian:14"),
+        # exact parent release known, or pinned to an unknown stable codename: no guess
+        (OSInfo(id="parrot", id_like=["debian"], version_codename="lory"), None),
+        (OSInfo(id="devuan", id_like=["debian"], version_codename="daedalus"), None),
+        (OSInfo(id="foo", id_like=["debian"], version_codename="bookworm"), None),
+        (OSInfo(id="foo", id_like=["debian"]), None),
+        # OSV-native distributions and Ubuntu derivatives never use the fallback
+        (OSInfo(id="debian", version_codename="forky"), None),
+        (OSInfo(id="ubuntu", id_like=["debian"], version_id="24.04"), None),
+        (OSInfo(id="linuxmint", id_like=["ubuntu", "debian"], version_codename="rolling"), None),
+        (OSInfo(id="kali"), None),
+    ],
+)
+def test_derivative_fallback_ecosystem(info, expected):
+    assert derivative_fallback_ecosystem(info) == expected
+
+
+def test_derivative_with_debian_codename_still_exact(make_dir_fs):
+    osr = _osr(ID="foo", ID_LIKE="debian", VERSION_CODENAME="trixie")
+    assert identify(make_dir_fs({"/etc/os-release": osr})).vuln_ecosystems == ["Debian:13"]
+
+
+def test_debian_and_ubuntu_unchanged_by_fallback(make_dir_fs):
+    deb = identify(make_dir_fs({"/etc/os-release": _osr(ID="debian", VERSION_ID="12")}))
+    ubu = identify(
+        make_dir_fs({"/etc/os-release": _osr(ID="ubuntu", ID_LIKE="debian", VERSION_ID="24.04")})
+    )
+    assert deb.vuln_ecosystems == ["Debian:12"]
+    assert ubu.vuln_ecosystems == ["Ubuntu:24.04:LTS"]
+    mint = identify(
+        make_dir_fs(
+            {
+                "/etc/os-release": _osr(
+                    ID="linuxmint",
+                    ID_LIKE="ubuntu debian",
+                    VERSION_CODENAME="wilma",
+                    UBUNTU_CODENAME="noble",
+                )
+            }
+        )
+    )
+    assert mint.vuln_ecosystems == ["Ubuntu:24.04:LTS"]
+    assert derivative_fallback_ecosystem(mint) is None

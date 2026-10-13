@@ -14,7 +14,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-SCHEMA_VERSION = "2.1"
+SCHEMA_VERSION = "2.2"
 
 
 class _Model(BaseModel):
@@ -100,6 +100,8 @@ class InitSystem(StrEnum):
     SUPERVISORD = "supervisord"
     INITTAB = "inittab"
     CONTAINER = "container"
+    CRON = "cron"  # crontab / cron.d / periodic jobs run by an enabled cron daemon
+    UDEV = "udev"  # RUN+= programs of udev rules, fired by device events
 
 
 class Activation(StrEnum):
@@ -109,6 +111,7 @@ class Activation(StrEnum):
     PATH = "path"
     DBUS = "dbus"
     ENTRYPOINT = "entrypoint"
+    DEVICE = "device"  # a udev rule runs it when a matching device event occurs
     MANUAL = "manual"  # installed but not started automatically
 
 
@@ -420,6 +423,38 @@ class SSVC(_Model):
     bod_26_04: SSVCTrace | None = None  # deployer timeline tree decision path
 
 
+class TriggerKind(StrEnum):
+    """What causes vulnerable code to execute on the analysed system."""
+
+    BOOT = "boot"
+    SOCKET = "socket"
+    TIMER = "timer"
+    PATH = "path"
+    DBUS = "dbus"
+    CRON = "cron"
+    DEVICE = "device"
+    ENTRYPOINT = "entrypoint"
+    SETUID = "setuid"  # a local user executes a setuid/setgid/file-capability binary
+    KERNEL = "kernel"  # any process reaches the kernel through system calls
+
+
+class Trigger(_Model):
+    """One activation path of a vulnerable component, with who can fire it.
+
+    ``fired_by`` is the least-privileged party able to cause the activation:
+    ``network`` (a remote peer), ``local user`` (any unprivileged account),
+    ``system`` (only the init system / scheduler, at boot or on a schedule),
+    ``device`` (hardware or a hot-plug event) or ``root``.
+    """
+
+    kind: TriggerKind
+    subject: str  # Service.id, or the binary path for setuid triggers
+    fired_by: str
+    runs_as: str | None = None
+    via: list[str] = Field(default_factory=list)  # e.g. [setuid binary, library]
+    detail: str | None = None
+
+
 class Threat(_Model):
     """One vulnerability reversed into the context of the analysed system."""
 
@@ -429,6 +464,7 @@ class Threat(_Model):
     title: str
     reachability: Reachability
     reachability_paths: list[list[str]] = Field(default_factory=list)
+    triggers: list[Trigger] = Field(default_factory=list)  # empty: nothing activates it
     services: list[str] = Field(default_factory=list)  # Service.id
     binaries: list[str] = Field(default_factory=list)
     attack_vector: str = "unknown"  # network | adjacent | local | physical | unknown
@@ -844,6 +880,8 @@ class Coverage(_Model):
     vulnerability_sources: list[str] = Field(default_factory=list)
     vulnerability_ecosystems: list[str] = Field(default_factory=list)
     offline: bool = False
+    analysis_mode: str = "static"  # static | chroot
+    runtime_probes: list[str] = Field(default_factory=list)  # chroot probes that ran
     limitations: list[str] = Field(default_factory=list)
 
 

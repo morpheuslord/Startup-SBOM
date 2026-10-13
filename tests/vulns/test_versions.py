@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from startup_sbom.models import PackageType as T
-from startup_sbom.vulns.versions import compare, ecosystem_package_type, sort_versions
+from startup_sbom.vulns.versions import (
+    compare,
+    ecosystem_package_type,
+    sort_versions,
+    strip_derivative_suffix,
+)
 
 DPKG = [
     ("1.0", "1.0", 0),
@@ -208,3 +213,39 @@ def test_sort_versions() -> None:
 )
 def test_ecosystem_package_type(eco: str, ptype: T | None) -> None:
     assert ecosystem_package_type(eco) == ptype
+
+
+@pytest.mark.parametrize(
+    ("version", "expected"),
+    [
+        ("1.2.3-1+kali1", "1.2.3-1"),
+        ("1.2.3-1kali1", "1.2.3-1"),
+        ("2023.1.0-0kali2", "2023.1.0-0"),
+        ("1:9.2p1-2+kali3", "1:9.2p1-2"),
+        ("6.1.0-1+kali.1", "6.1.0-1"),
+        ("1.0-1.kali1", "1.0-1"),
+        ("1.2.3-1kali1+b1", "1.2.3-1"),
+        ("1.2.3-kali1", "1.2.3"),
+        ("1.2.3+kali1", "1.2.3"),
+        ("1.2.3-1KALI1", "1.2.3-1"),
+        # ``~kali`` sorts *below* the Debian revision: stripping would look more patched
+        ("1.2.3-1~kali1", "1.2.3-1~kali1"),
+        ("1.2.3-1+kali1~bpo1", "1.2.3-1+kali1~bpo1"),
+        # nothing to strip / nothing left
+        ("1.2.3-1", "1.2.3-1"),
+        ("1.2.3-1+deb12u1", "1.2.3-1+deb12u1"),
+        ("1.2-1kalinux", "1.2-1kalinux"),
+        ("kali1", "kali1"),
+        ("1:kali1", "1:kali1"),
+    ],
+)
+def test_strip_derivative_suffix(version: str, expected: str) -> None:
+    got = strip_derivative_suffix(version, ["kali"])
+    assert got == expected
+    assert compare(T.DEB, got, version) <= 0  # never more patched than installed
+
+
+def test_strip_derivative_suffix_vendors() -> None:
+    assert strip_derivative_suffix("5.1-2parrot1", ["parrot"]) == "5.1-2"
+    assert strip_derivative_suffix("5.1-2parrot1", ["kali"]) == "5.1-2parrot1"
+    assert strip_derivative_suffix("5.1-2+kali1", []) == "5.1-2+kali1"

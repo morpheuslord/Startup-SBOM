@@ -37,6 +37,7 @@ from startup_sbom.initsys.cmdline import (
     detect_launcher,
     which,
 )
+from startup_sbom.log import ops
 from startup_sbom.models import Activation, InitSystem, Service
 from startup_sbom.rootfs import RootFS
 
@@ -75,6 +76,7 @@ _PATH_BINARIES: dict[InitSystem, str] = {
 def analyzers() -> list[InitAnalyzer]:
     """One instance of every analyzer, in a fixed order."""
     from startup_sbom.initsys.container import ContainerAnalyzer
+    from startup_sbom.initsys.cron import CronAnalyzer
     from startup_sbom.initsys.inittab import InittabAnalyzer
     from startup_sbom.initsys.openrc import OpenRCAnalyzer
     from startup_sbom.initsys.runit import RunitAnalyzer
@@ -82,6 +84,7 @@ def analyzers() -> list[InitAnalyzer]:
     from startup_sbom.initsys.supervisord import SupervisordAnalyzer
     from startup_sbom.initsys.systemd.analyzer import SystemdAnalyzer
     from startup_sbom.initsys.sysv import SysVAnalyzer
+    from startup_sbom.initsys.udev import UdevAnalyzer
 
     return [
         SystemdAnalyzer(),
@@ -92,6 +95,8 @@ def analyzers() -> list[InitAnalyzer]:
         SupervisordAnalyzer(),
         InittabAnalyzer(),
         ContainerAnalyzer(),
+        CronAnalyzer(),
+        UdevAnalyzer(),
     ]
 
 
@@ -200,6 +205,8 @@ def _reconcile(
                 active[target] = (autos, prefix)
                 queue.append(target)
     for system, services in by_system.items():
+        if system in SCHEDULED:
+            continue  # gated by the daemon that runs them: gate_scheduled_jobs()
         installed = _installed(fs, system)
         state = active.get(system)
         for svc in services:
@@ -250,6 +257,55 @@ def _supervisord_children(
         launcher.evidence.append(f"supervisord runs as user {cfg.user} ([supervisord] user=)")
 
 
+#: Job sources that run only while their daemon runs: system -> (daemon names, label).
+SCHEDULED: dict[InitSystem, tuple[frozenset[str], str]] = {
+    InitSystem.CRON: (
+        frozenset({"cron", "crond", "cronie", "fcron", "dcron", "bcron", "anacron", "cronnext"}),
+        "cron daemon",
+    ),
+    InitSystem.UDEV: (frozenset({"systemd-udevd", "udevd", "eudev", "mdev"}), "udev daemon"),
+}
+
+
+def gate_scheduled_jobs(by_system: dict[InitSystem, list[Service]]) -> None:
+    """Keep cron jobs / udev programs automatic only if their daemon is started.
+
+    The daemon must be run by a service that itself starts automatically (any
+    init system, container entrypoints included).  BusyBox applets are matched
+    by their invoked name (``crond`` / ``mdev``).
+    """
+    started = [
+        svc
+        for system, services in by_system.items()
+        if system not in SCHEDULED
+        for svc in services
+        if svc.starts_automatically
+    ]
+    for system, (daemons, label) in SCHEDULED.items():
+        jobs = by_system.get(system)
+        if not jobs:
+            continue
+        runner = next((svc for svc in started if _runs_any(svc, daemons)), None)
+        for job in jobs:
+            if runner is not None:
+                job.evidence.append(f"executed by the {label} of {runner.id}")
+                job.boot_path = _shorten([*runner.boot_path, runner.id, *job.boot_path])
+                continue
+            if any(a is not Activation.MANUAL for a in job.activation):
+                job.activation = [Activation.MANUAL]
+                job.evidence.append(f"not run: no {label} is started automatically")
+
+
+def _runs_any(svc: Service, names: frozenset[str]) -> bool:
+    for cmd in svc.commands:
+        if cmd.directive in ("ExecStop", "ExecStopPost", "ExecReload", "stop"):
+            continue
+        words = [cmd.executable or "", *cmd.argv[:2]]
+        if any(posixpath.basename(w) in names for w in words if w):
+            return True
+    return False
+
+
 def _merge(groups: Iterable[list[Service]]) -> list[Service]:
     out: dict[str, Service] = {}
     for services in groups:
@@ -270,10 +326,16 @@ def discover_all(ctx: ScanContext) -> list[Service]:
             ctx.warn(f"{analyzer.name.value}: analysis failed: {type(exc).__name__}: {exc}")
             continue
         by_system[analyzer.name] = services
+        auto = sum(1 for s in services if s.starts_automatically)
+        ops.info(
+            "%s: %d service(s) configured, %d automatic", analyzer.name.value, len(services), auto
+        )
     pid1, pid1_desc = _pid1(ctx, by_system)
+    ops.info("PID 1: %s (%s)", pid1 or "unknown", pid1_desc)
     _dedupe_sysv(by_system, pid1)
     try:
         _reconcile(ctx, by_system, pid1, pid1_desc)
+        gate_scheduled_jobs(by_system)
     except Exception as exc:  # noqa: BLE001
         ctx.warn(f"initsys: reconciliation failed: {type(exc).__name__}: {exc}")
     return _merge(by_system[s] for s in sorted(by_system, key=lambda s: s.value))

@@ -7,11 +7,14 @@ language, so names taken from the scanned system can never inject syntax.
 
 from __future__ import annotations
 
+import posixpath
 import re
+from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from itertools import pairwise
 
-from startup_sbom.models import AttackChain, Report
+from startup_sbom.models import AttackChain, Package, PackageType, Report
 from startup_sbom.report.native import RenderOptions
 from startup_sbom.textsafe import clean
 
@@ -88,6 +91,98 @@ def _step_label(title: str, technique: str | None) -> str:
     return f"{title} ({technique})" if technique else title
 
 
+# --------------------------------------------------------------------------- labels
+_PART = 32  # longest version / binary name / location hint kept in a label
+
+
+def _tail(text: str, limit: int = _PART) -> str:
+    """``text`` shortened from the left (the end is usually what tells items apart)."""
+    s = one_line(text, 10_000)
+    return s if len(s) <= limit else "…" + s[-(limit - 1) :]
+
+
+def _fit(head: str, suffix: str) -> str:
+    """``head + suffix`` within :data:`MAX_LABEL`, trimming ``head`` so ``suffix`` survives."""
+    head = one_line(head, 10_000)
+    room = MAX_LABEL - len(suffix)
+    if len(head) > room:
+        head = head[: max(room - 1, 1)] + "…"
+    return head + suffix
+
+
+def _pkg_label(p: Package) -> str:
+    return f"{p.name}{':' + p.arch if p.arch else ''}"
+
+
+def _go_binary(p: Package) -> str | None:
+    """The binary a Go module was embedded in (``None`` for other ecosystems)."""
+    if p.type != PackageType.GOLANG:
+        return None
+    return p.properties.get("binary") or p.location or None
+
+
+def _versioned_label(p: Package) -> str:
+    """Name plus version (``go``-prefixed for the Go stdlib) and, for Go, the binary."""
+    suffix = ""
+    if p.version:
+        ver = p.version
+        if p.type == PackageType.GOLANG and p.name == "stdlib" and ver[:1].isdigit():
+            ver = "go" + ver
+        suffix = " " + _tail(ver)
+    binary = _go_binary(p)
+    if binary:
+        suffix += f" ({_tail(posixpath.basename(binary.rstrip('/')) or binary)})"
+    return _fit(_pkg_label(p), suffix)
+
+
+def _location_hints(paths: list[str]) -> list[str]:
+    """The shortest path tails telling ``paths`` apart, after dropping a shared ending."""
+    parts = [[c for c in path.split("/") if c] for path in paths]
+    while all(len(x) > 1 for x in parts) and len({x[-1] for x in parts}) == 1:
+        parts = [x[:-1] for x in parts]
+    longest = max((len(x) for x in parts), default=0)
+    depth = longest
+    for k in range(1, longest + 1):
+        if len({"/".join(x[-k:]) for x in parts}) == len(parts):
+            depth = k
+            break
+    hints = []
+    for x in parts:
+        tail = "/".join(x[-depth:]) if x else ""
+        hints.append(_tail(("/" if depth >= len(x) else "…/") + tail) if tail else "")
+    return hints
+
+
+def _collisions(labels: dict[str, str], keys: Iterable[str]) -> list[list[str]]:
+    by_label: dict[str, list[str]] = defaultdict(list)
+    for k in keys:
+        by_label[labels[k]].append(k)
+    return [sorted(v) for _lbl, v in sorted(by_label.items()) if len(v) > 1]
+
+
+def _disambiguate(labels: dict[str, str], pkgs: dict[str, Package]) -> dict[str, str]:
+    """Make the labels of distinct packages distinct.
+
+    Packages sharing a label get their version (and, for Go modules, the binary
+    they are embedded in); any still sharing one get the shortest distinguishing
+    tail of their location, and a final ``#n`` ordinal if even that is equal.
+    """
+    out = dict(labels)
+    keys = sorted(k for k in labels if k in pkgs)
+    for group in _collisions(out, keys):
+        for k in group:
+            out[k] = _versioned_label(pkgs[k])
+    for group in _collisions(out, keys):
+        where = [_go_binary(pkgs[k]) or pkgs[k].location or "" for k in group]
+        for k, hint in zip(group, _location_hints(where), strict=True):
+            if hint:
+                out[k] = _fit(out[k], f" in {hint}")
+    for group in _collisions(out, keys):
+        for i, k in enumerate(group, 1):
+            out[k] = _fit(out[k], f" #{i}")
+    return out
+
+
 # --------------------------------------------------------------------------- model
 def attack_graph(report: Report, *, include_supply_chain: bool = True) -> Graph:
     """Build the combined attack graph (+ optional blast-radius subgraph)."""
@@ -119,8 +214,7 @@ def attack_graph(report: Report, *, include_supply_chain: bool = True) -> Graph:
 
         def sc_node(item: str) -> str:
             if item in pkgs:
-                p = pkgs[item]
-                sc_nodes[item] = (f"{p.name}{':' + p.arch if p.arch else ''}", "package")
+                sc_nodes[item] = (_pkg_label(pkgs[item]), "package")
             elif item in svcs:
                 sc_nodes[item] = (svcs[item].name, "service")
             elif item.startswith("/"):
@@ -130,14 +224,19 @@ def attack_graph(report: Report, *, include_supply_chain: bool = True) -> Graph:
             return item
 
         for br in sorted(report.supply_chain.blast_radius, key=lambda b: b.package):
-            sc_node(br.package)
+            sc_node(br.package)  # emitted only if it ends up on an edge (below)
             paths = [p for p in br.example_paths if len(p) >= 2]
             if paths:
                 for path in paths:
                     sc_edges.extend((sc_node(a), sc_node(b), "loads") for a, b in pairwise(path))
             else:
                 sc_edges.extend((br.package, sc_node(svc), "used by") for svc in br.services)
-        keyed += [("s", k, lbl, kind) for k, (lbl, kind) in sorted(sc_nodes.items())]
+        # A blast-radius entry with no example path and no service has no edge;
+        # drawing it would only add a free-floating node, so keep linked nodes only.
+        linked = {a for a, _b, _l in sc_edges} | {b for _a, b, _l in sc_edges}
+        sc_nodes = {k: v for k, v in sc_nodes.items() if k in linked}
+        labels = _disambiguate({k: lbl for k, (lbl, _kind) in sc_nodes.items()}, pkgs)
+        keyed += [("s", k, labels[k], kind) for k, (_lbl, kind) in sorted(sc_nodes.items())]
 
     ids = {(g, k): f"n{i}" for i, (g, k, _l, _k) in enumerate(keyed)}
     graph = Graph(nodes=[GraphNode(ids[(g, k)], k, lbl, kind) for g, k, lbl, kind in keyed])
@@ -196,6 +295,8 @@ def render_dot(report: Report, options: RenderOptions) -> str:
         for n in g.nodes
         if n.id in attack_ids
     ]
+    if not g.nodes:
+        lines.append(f"    none [label={dot_quote(EMPTY_GRAPH)}, {_DOT_STYLE['state']}];")
     lines.append("  }")
     sc = [n for n in g.nodes if n.id not in attack_ids]
     if sc:
@@ -250,9 +351,16 @@ def _mermaid_edge(src: str, dst: str, label: str, dashed: bool) -> str:
     return f'  {src} {arrow}|"{mermaid_text(label, 60)}"| {dst}'
 
 
+#: Shown when no attack chain and no supply-chain path exists.
+EMPTY_GRAPH = "no attack chain or supply-chain path was found"
+
+
 def mermaid_graph(graph: Graph) -> str:
     """Mermaid ``flowchart LR`` source for a :class:`Graph`."""
     lines = ["flowchart LR", *_MERMAID_CLASSES]
+    if not graph.nodes:
+        # An empty flowchart renders as a blank box; say why there is nothing to draw.
+        lines.append(_mermaid_node("none", EMPTY_GRAPH, "state"))
     lines += [_mermaid_node(n.id, n.label, n.kind) for n in graph.nodes]
     lines += [_mermaid_edge(e.source, e.target, e.label, e.mitigated) for e in graph.edges]
     return "\n".join(lines) + "\n"

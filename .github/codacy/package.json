@@ -6,6 +6,7 @@
   },
   "overrides": {
     "ajv@^8.0.0": "^8.18.0",
+    "argparse": "^2.0.1",
     "decode-uri-component": "^0.5.0",
     "deepmerge-ts": "^8.0.2",
     "fast-xml-parser": "^5.7.0",

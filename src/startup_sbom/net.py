@@ -27,6 +27,7 @@ import platformdirs
 
 from startup_sbom import __version__
 from startup_sbom.errors import NetworkError
+from startup_sbom.log import ops
 
 log = logging.getLogger(__name__)
 
@@ -227,14 +228,25 @@ class HttpClient:
             raise NetworkError("offline mode: network access disabled")
         delay = 1.0
         last_exc: Exception | None = None
+        where = _where(url)
         for attempt in range(self.retries + 1):
+            started = time.monotonic()
             try:
                 resp = self.client.request(
                     method, url, headers=headers, json=json_body, params=params
                 )
             except httpx.HTTPError as exc:
                 last_exc = exc
+                ops.info("%s %s failed: %s", method, where, type(exc).__name__)
             else:
+                ops.info(
+                    "%s %s → %d (%.0f ms, %s)",
+                    method,
+                    where,
+                    resp.status_code,
+                    (time.monotonic() - started) * 1000,
+                    _size(len(resp.content)),
+                )
                 if resp.status_code not in (429, 500, 502, 503, 504):
                     if len(resp.content) > MAX_RESPONSE_BYTES:
                         raise NetworkError(f"response from {urlsplit(url).hostname} too large")
@@ -265,6 +277,7 @@ class HttpClient:
             body, meta = cached
             age = time.time() - float(meta.get("fetched", 0))
             if age <= (ttl or 0) or self.offline:
+                ops.info("cache hit %s (age %s)", _where(url), _age(age))
                 return Response(200, body, from_cache=True, stale=age > (ttl or 0))
         if self.offline:
             raise NetworkError(f"offline mode and no cached copy of {urlsplit(url).hostname}")
@@ -314,6 +327,25 @@ class HttpClient:
 
     def cache_put_json(self, namespace: str, key: str, value: Any) -> None:
         self._write_cache(f"{namespace}:{key}", json.dumps(value).encode(), {})
+
+
+def _where(url: str) -> str:
+    """``host/path`` of ``url`` for the operation log (never the query string)."""
+    parts = urlsplit(url)
+    path = parts.path if len(parts.path) <= 80 else parts.path[:79] + "…"
+    return f"{parts.hostname or '?'}{path}"
+
+
+def _size(n: int) -> str:
+    return f"{n / 1024:.1f} kB" if n >= 1024 else f"{n} B"
+
+
+def _age(seconds: float) -> str:
+    if seconds < 120:
+        return f"{seconds:.0f}s"
+    if seconds < 7200:
+        return f"{seconds / 60:.0f}m"
+    return f"{seconds / 3600:.1f}h"
 
 
 def _atomic_write(path: Path, data: bytes) -> None:

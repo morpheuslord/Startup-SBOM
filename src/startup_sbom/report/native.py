@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from startup_sbom.errors import OutputError
 from startup_sbom.models import (
     Activation,
+    Coverage,
     Package,
     PackageType,
     Reachability,
@@ -316,3 +317,22 @@ def listen_text(protocol: str, address: str | None, port: int | None, path: str 
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
     return f"{protocol} {host}:{port}" if port is not None else f"{protocol} {host}"
+
+
+def trigger_label(threat: Threat) -> str:
+    """Strongest activation trigger of ``threat`` in a few words (``none`` if nothing runs it).
+
+    ``setuid /usr/bin/passwd (local user)`` / ``boot systemd:ssh.service (network)``.
+    """
+    if not threat.triggers:
+        return "none"
+    t = threat.triggers[0]
+    more = f" +{len(threat.triggers) - 1}" if len(threat.triggers) > 1 else ""
+    return f"{t.kind.value} {t.subject} ({t.fired_by}){more}"
+
+
+def analysis_mode_label(coverage: Coverage) -> str:
+    """``static`` or ``chroot (probes: loader, packages, systemd)``."""
+    if coverage.analysis_mode == "chroot" and coverage.runtime_probes:
+        return f"chroot (sandboxed probes: {', '.join(coverage.runtime_probes)})"
+    return coverage.analysis_mode

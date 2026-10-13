@@ -119,6 +119,7 @@ class ResultsScreen(Screen[None]):
         fail_on: str = "none",
         policy_violated: bool = False,
         ai_settings: AISettings | None = None,
+        analyst_notes: list[tuple[str, str]] | None = None,
     ) -> None:
         super().__init__()
         meta = report.metadata.target
@@ -130,6 +131,8 @@ class ResultsScreen(Screen[None]):
         self.fail_on = fail_on
         self.policy_violated = policy_violated
         self.ai_settings = ai_settings or AISettings()
+        # Live analyst commentary from the scan: display-only, never part of the report.
+        self.analyst_notes = list(analyst_notes or [])
         self.index = ThreatIndex(report)
         self.threat_rows: list[ThreatRow] = []
         self.current_threat: ThreatRow | None = None
@@ -762,6 +765,13 @@ class ResultsScreen(Screen[None]):
     # warnings -------------------------------------------------------------------
     def _build_warnings(self) -> None:
         log = self.query_one("#warnings-log", RichLog)
+        if self.analyst_notes:
+            log.write(Text("Live analyst notes (model commentary, not part of the report)", "bold"))
+            for stage, note in self.analyst_notes[:200]:
+                line = Text(plain(stage, 160) + ": ", style="magenta")
+                line.append_text(wrap_txt(note, max_len=2000))
+                log.write(line)
+            log.write(Text(""))
         log.write(Text("Coverage limitations", style="bold yellow"))
         for lim in self.report.metadata.coverage.limitations or ["none recorded"]:
             log.write(txt(f"• {lim}", max_len=1000))

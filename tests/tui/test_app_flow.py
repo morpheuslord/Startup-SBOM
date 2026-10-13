@@ -51,6 +51,7 @@ def make_fake_scan(
         progress: Callable[[ProgressEvent], None] | None = None,
         strict: bool = False,
         cancel: threading.Event | None = None,
+        activity: Callable[[Any], None] | None = None,
     ) -> Report:
         if threads is not None:
             threads.add(threading.get_ident())

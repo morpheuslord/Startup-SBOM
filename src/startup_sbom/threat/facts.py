@@ -20,6 +20,7 @@ from startup_sbom.models import (
     Report,
     Service,
     Threat,
+    TriggerKind,
 )
 from startup_sbom.threat.reachability import (
     SystemIndex,
@@ -68,6 +69,9 @@ class ThreatFact:
     technique_id: str | None
     mitigations: tuple[str, ...]
     title: str
+    #: Root-granting binary of another package that loads the vulnerable library
+    #: (from a ``setuid`` trigger with a ``via`` path); ``None`` when there is none.
+    privileged_loader: str | None = None
 
     @property
     def gains_control(self) -> bool:
@@ -287,6 +291,14 @@ def _threat_fact(t: Threat) -> ThreatFact:
         technique_id=technique,
         mitigations=tuple(t.mitigations),
         title=t.title,
+        privileged_loader=next(
+            (
+                tr.subject
+                for tr in t.triggers
+                if tr.kind is TriggerKind.SETUID and tr.via and tr.runs_as == "root"
+            ),
+            None,
+        ),
     )
 
 

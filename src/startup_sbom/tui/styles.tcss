@@ -207,24 +207,96 @@ ArticleScreen {
 }
 
 /* ---------------------------------------------------------------- live scan */
+/* Wide: stages on top, raw operations | live analyst side by side, notes below.
+   Narrow (< 110 cols): the two panes stack.  Short (< 32 rows): fewer stage rows
+   and the notes log starts hidden (n shows it).  s/o/a/n toggle every pane. */
 #scan-title {
-    height: auto;
-    padding: 1 1 0 1;
+    height: 1;
+    padding: 0 1;
+}
+
+#scan-status {
+    height: 1;
+    padding: 0 1;
 }
 
 #scan-bar {
-    margin: 1 1;
+    width: auto;
+    margin: 0 2 0 0;
 }
 
-#scan-stage,
+#scan-stage {
+    width: 1fr;
+}
+
 #scan-elapsed {
+    width: auto;
     margin: 0 1;
 }
 
-#scan-log {
-    height: 1fr;
-    margin: 1 1 0 1;
+#scan-stages-box {
+    height: auto;
+    max-height: 17;
+    padding: 0 1;
     border: round $primary 50%;
+    border-title-color: $accent;
+    border-title-style: bold;
+}
+
+#scan-stages {
+    height: auto;
+}
+
+#scan-panes {
+    height: 1fr;
+}
+
+#scan-ops {
+    padding: 0 1;
+    width: 3fr;
+    height: 1fr;
+    border: round $primary 50%;
+    border-title-color: $accent;
+}
+
+#scan-analyst-box {
+    width: 2fr;
+    height: 1fr;
+    padding: 0 1;
+    border: round $secondary;
+    border-title-color: $secondary;
+}
+
+#scan-analyst {
+    height: auto;
+}
+
+#scan-log {
+    padding: 0 1;
+    height: 7;
+    border: round $primary 30%;
+    border-title-color: $text-muted;
+}
+
+ScanScreen.-narrow #scan-bar Bar {
+    width: 12;
+}
+
+ScanScreen.-narrow #scan-panes {
+    layout: vertical;
+}
+
+ScanScreen.-narrow #scan-ops,
+ScanScreen.-narrow #scan-analyst-box {
+    width: 1fr;
+}
+
+ScanScreen.-short #scan-stages-box {
+    max-height: 8;
+}
+
+ScanScreen.-short #scan-log {
+    display: none;
 }
 
 /* ---------------------------------------------------------------- results */

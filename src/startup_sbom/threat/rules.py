@@ -102,7 +102,10 @@ def r1_remote_service_rce(fb: FactBase) -> Iterator[Edge]:
 
 # --------------------------------------------------------------------------- R3 / R4 / R5 / R7
 def r3_local_privesc(fb: FactBase) -> Iterator[Edge]:
-    """Local privilege escalation to root (setuid R4, glibc+setuid R5, kernel R7, else R3)."""
+    """Local privilege escalation to root.
+
+    R4: setuid binary; R5: library loaded by a setuid binary; R7: kernel; else R3.
+    """
     local_states = fb.local_states()
     for t in fb.threats:
         if t.postcondition != ROOT or _remote_reachable_as_root(t):
@@ -111,7 +114,7 @@ def r3_local_privesc(fb: FactBase) -> Iterator[Edge]:
             continue
         if t.attack_vector not in ("local", "unknown"):
             continue
-        rule, why = _privesc_rule(t, fb)
+        rule, why = _privesc_rule(t)
         for src in local_states:
             mitigated_by = _nnp_for_user(fb, src)
             yield Edge(
@@ -130,13 +133,14 @@ def r3_local_privesc(fb: FactBase) -> Iterator[Edge]:
             )
 
 
-def _privesc_rule(t: ThreatFact, fb: FactBase) -> tuple[str, str]:
+def _privesc_rule(t: ThreatFact) -> tuple[str, str]:
     if t.reachability is Reachability.KERNEL:
         return "R7", "kernel vulnerability exploitable by a local user"
+    if t.privileged_loader:
+        # R5 needs a recorded link edge: the setuid binary actually maps the library.
+        return "R5", f"library flaw reached through the setuid binary {t.privileged_loader}"
     if t.reachability is Reachability.SETUID:
         return "R4", "setuid/privileged binary with a local privilege-escalation flaw"
-    if fb.setuid and t.reachability in (Reachability.LINKED_BY_SERVICE, Reachability.INSTALLED):
-        return "R5", "library/loader flaw abused through a present setuid binary"
     return "R3", "local privilege-escalation weakness"
 
 

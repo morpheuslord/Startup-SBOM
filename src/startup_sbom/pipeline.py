@@ -6,14 +6,15 @@ import logging
 import threading
 import uuid
 from collections import Counter, defaultdict
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-from dataclasses import dataclass
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from startup_sbom import __version__
 from startup_sbom.context import ScanContext, ScanOptions
 from startup_sbom.errors import ScanCancelledError
+from startup_sbom.log import capture_ops
 from startup_sbom.models import (
     Activation,
     Binary,
@@ -46,12 +47,31 @@ class ProgressEvent:
 ProgressFn = Callable[[ProgressEvent], None]
 
 
+@dataclass(frozen=True, slots=True)
+class ActivityEvent:
+    """What the scan is doing right now, for live displays and the live analyst.
+
+    ``kind`` is ``op`` (one raw operation, from the :data:`~startup_sbom.log.ops`
+    log), ``digest`` (what a finished stage found, with ``data`` holding its key
+    numbers), ``warning`` (a non-fatal problem) or ``stage-failed``.
+    """
+
+    stage: str
+    kind: str
+    message: str
+    data: Mapping[str, object] = field(default_factory=dict)
+
+
+ActivityFn = Callable[[ActivityEvent], None]
+
+
 def _stage_count(options: ScanOptions) -> int:
     optional = (
         options.language_packages,
         bool(options.vuln_sources),
         options.eol,
         options.prefetch_intel,
+        options.mode != "static",
     )
     return 8 + sum(optional)
 
@@ -66,9 +86,12 @@ class _Stages:
         *,
         strict: bool,
         cancel: threading.Event | None = None,
+        activity: ActivityFn | None = None,
     ) -> None:
         self.ctx = ctx
         self.progress = progress
+        self.activity = activity
+        self.current = ""
         self.strict = strict
         self.cancel = cancel
         self.index = 0
@@ -79,6 +102,7 @@ class _Stages:
         if self.cancel is not None and self.cancel.is_set():
             raise ScanCancelledError(f"scan cancelled before: {title}")
         self.index += 1
+        self.current = title
         if self.progress is not None:
             self.progress(ProgressEvent(title, self.index, self.total))
         log.info("stage %d/%d: %s", self.index, self.total, title)
@@ -91,7 +115,34 @@ class _Stages:
                 raise
             log.debug("stage %r failed", title, exc_info=True)
             self.ctx.warn(f"{title} failed: {type(exc).__name__}: {exc}")
+            self.emit("stage-failed", f"{type(exc).__name__}: {exc}")
             self.ctx.limit(f"{title} did not complete; results are partial")
+
+    def emit(self, kind: str, message: str, **data: object) -> None:
+        """Send an activity event for the current stage (never raises)."""
+        if self.activity is None:
+            return
+        try:
+            self.activity(ActivityEvent(self.current, kind, message, data))
+        except ScanCancelledError:
+            raise
+        except Exception:
+            log.debug("activity sink failed", exc_info=True)
+
+    def digest(self, build: Callable[..., tuple[str, dict[str, object]]], *args: object) -> None:
+        """Summarise what the stage that just ran found (only when someone listens).
+
+        The digest is built lazily and a failure to build it is logged, never raised:
+        a summary must not turn a successful stage into a failed one.
+        """
+        if self.activity is None:
+            return
+        try:
+            message, data = build(*args)
+        except Exception:
+            log.debug("digest for %r failed", self.current, exc_info=True)
+            return
+        self.emit("digest", message, **data)
 
 
 def scan(
@@ -102,6 +153,7 @@ def scan(
     progress: ProgressFn | None = None,
     strict: bool = False,
     cancel: threading.Event | None = None,
+    activity: ActivityFn | None = None,
 ) -> Report:
     """Analyse ``target`` and return a complete :class:`~startup_sbom.models.Report`.
 
@@ -110,6 +162,7 @@ def scan(
     modifies anything in the target.  With ``strict=True`` stage failures raise
     instead of being recorded as warnings.  Setting ``cancel`` stops the scan at
     the next stage boundary with :class:`~startup_sbom.errors.ScanCancelledError`.
+    ``activity`` receives raw operations, stage digests and warnings as they happen.
     """
     from startup_sbom.sources import open_target
 
@@ -131,8 +184,16 @@ def scan(
                 ),
                 container=acquired.container,
             )
-            stages = _Stages(ctx, progress, strict=strict, cancel=cancel)
-            _run(report, ctx, client, stages, acquired.live_host)
+            stages = _Stages(ctx, progress, strict=strict, cancel=cancel, activity=activity)
+            if activity is not None:
+                ctx.on_warning = lambda message: stages.emit("warning", message)
+            capture = (
+                capture_ops(lambda rec: stages.emit("op", rec.getMessage()))
+                if activity is not None
+                else nullcontext()
+            )
+            with capture:
+                _run(report, ctx, client, stages, acquired.live_host)
             report.warnings = sorted(
                 set(ctx.warnings + acquired.fs.warnings + list(acquired.warnings))
             )
@@ -148,12 +209,14 @@ def _run(
     report: Report, ctx: ScanContext, http: HttpClient, stages: _Stages, live_host: bool
 ) -> None:
     from startup_sbom import binaries, distro, initsys, langpkgs, pkgdb, threat, vulns
+    from startup_sbom import digest as dg
     from startup_sbom import supplychain as sc
 
     opts = ctx.options
     coverage: Coverage = report.metadata.coverage
     coverage.offline = opts.offline
     records: list[PackageRecord] = []
+    dbs: list[str] = []
     owners = FileOwnerIndex(ctx.fs)
     services: list[Service] = []
     bins: dict[str, Binary] = {}
@@ -163,6 +226,12 @@ def _run(
         ctx.os = distro.identify(ctx.fs)
         report.os = ctx.os
         coverage.vulnerability_ecosystems = list(ctx.os.vuln_ecosystems)
+        if not opts.derivative_fallback:
+            fallback = distro.derivative_fallback_ecosystem(ctx.os)
+            coverage.vulnerability_ecosystems = [
+                e for e in coverage.vulnerability_ecosystems if e != fallback
+            ]
+        stages.digest(dg.os_digest, ctx.os)
 
     with stages.stage("Reading package databases"):
         records, dbs = pkgdb.read_all(ctx)
@@ -170,6 +239,7 @@ def _run(
         if not dbs:
             ctx.limit("no supported package database found; ownership cannot be attributed")
         owners.add_records(records)
+        stages.digest(dg.packages_digest, [r.package for r in records], dbs)
 
     with stages.stage("Discovering services"):
         services = initsys.discover_all(ctx)
@@ -182,6 +252,7 @@ def _run(
                     if owner not in pkgs:
                         pkgs.append(owner)
             svc.packages = pkgs
+        stages.digest(dg.services_digest, services)
 
     exec_users: dict[str, list[str]] = defaultdict(list)
     for svc in services:
@@ -192,7 +263,16 @@ def _run(
         bins = binaries.analyze_executables(
             ctx, sorted(exec_users), owners, max_depth=opts.max_link_depth, used_by=exec_users
         )
-        for priv in binaries.find_privileged(ctx, records, owners):
+        privileged = binaries.find_privileged(ctx, records, owners)
+        if opts.link_analysis:
+            # Library closures of setuid/capability binaries: what a local user can make
+            # run as root.  R5 (library flaw via a setuid binary) needs these edges.
+            elf_paths = [p.path for p in privileged if p.kind == "elf" and p.path not in bins]
+            closures = binaries.analyze_executables(
+                ctx, elf_paths, owners, max_depth=opts.max_link_depth
+            )
+            privileged = [closures.get(p.path, p) for p in privileged]
+        for priv in privileged:
             existing = bins.get(priv.path)
             if existing is None:
                 bins[priv.path] = priv
@@ -201,6 +281,11 @@ def _run(
                 existing.setgid = existing.setgid or priv.setgid
                 existing.capabilities = sorted(set(existing.capabilities) | set(priv.capabilities))
         unmanaged = binaries.find_unmanaged_executables(ctx, owners)
+        stages.digest(dg.binaries_digest, list(bins.values()), unmanaged)
+
+    if opts.mode != "static":
+        with stages.stage("Confirming with the target's own tools (sandboxed)"):
+            _chroot_probes(ctx, coverage, stages, services, bins, records, dbs, owners)
 
     if opts.language_packages:
         with stages.stage("Inventorying embedded language packages"):
@@ -208,6 +293,7 @@ def _run(
             records.extend(lang)
             for rec in lang:
                 owners.add(rec.package.id, rec.files)
+            stages.digest(dg.language_digest, [r.package for r in lang])
 
     report.packages = _dedupe_packages(records, ctx)
     report.services = services
@@ -219,20 +305,26 @@ def _run(
             coverage.vulnerability_sources = sorted(
                 {s for v in report.vulnerabilities for s in v.sources} | ctx.vuln_sources_used
             )
+            stages.digest(
+                dg.vulns_digest, [v for v in report.vulnerabilities if v.status in _ACTIVE]
+            )
     else:
         ctx.limit("vulnerability matching disabled")
 
     if opts.eol:
         with stages.stage("Checking end-of-life status"):
             report.os.eol = sc.eol.lookup_eol(ctx.os, http)
+            stages.digest(dg.eol_digest, report.os.eol)
 
     with stages.stage("Analysing supply chain"):
         report.supply_chain = sc.analyze(
             report, records, ctx, owners, unmanaged_executables=unmanaged
         )
+        stages.digest(dg.supply_chain_digest, report)
 
     with stages.stage("Reversing vulnerabilities into threats"):
         report.threats = threat.reverse_vulnerabilities(report, ctx)
+        stages.digest(dg.threats_digest, report.threats)
 
     if opts.prefetch_intel and report.threats:
         with stages.stage("Prefetching vulnerability intelligence"):
@@ -246,11 +338,57 @@ def _run(
 
     with stages.stage("Mapping chained attacks"):
         report.attack_chains = threat.build_attack_chains(report, report.threats, ctx)
+        stages.digest(dg.chains_digest, report)
 
     with stages.stage("Explaining results"):
         _explain(report)
 
     _finalize(report)
+
+
+def _chroot_probes(
+    ctx: ScanContext,
+    coverage: Coverage,
+    stages: _Stages,
+    services: list[Service],
+    bins: dict[str, Binary],
+    records: list[PackageRecord],
+    dbs: list[str],
+    owners: FileOwnerIndex,
+) -> None:
+    """Chroot mode: run the sandboxed probes, or explain why the scan stays static."""
+    from startup_sbom import sandbox
+
+    try:
+        box = sandbox.open_sandbox(ctx, ctx.fs)
+    except sandbox.SandboxUnavailable as exc:
+        message = f"chroot mode unavailable, results are from static analysis only: {exc}"
+        if ctx.options.mode == "chroot":
+            ctx.warn(message)
+        ctx.limit(message)
+        stages.emit("digest", f"stayed static: {exc}")
+        return
+    coverage.analysis_mode = "chroot"
+    outcomes = sandbox.run_all(
+        ctx,
+        box,
+        services=services,
+        binaries=bins.values(),
+        records=records,
+        databases=dbs,
+        owners=owners,
+    )
+    coverage.runtime_probes = sorted(o.name for o in outcomes if o.ran)
+    for o in outcomes:
+        if not o.ran:
+            ctx.limit(f"chroot probe {o.name} did not run: {o.summary}")
+    stages.emit(
+        "digest",
+        f"{box.runs:,} sandboxed command(s); "
+        + "; ".join(f"{o.name}: {o.summary}" for o in outcomes),
+        probes=coverage.runtime_probes,
+        sandboxed_runs=box.runs,
+    )
 
 
 def _explain(report: Report) -> None:
