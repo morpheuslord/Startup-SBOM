@@ -44,7 +44,7 @@ docker run --rm -v "$PWD:/in:ro" -v "$PWD/out:/out" --user "$(id -u):$(id -g)" \
   ghcr.io/morpheuslord/startup-sbom scan docker-archive:/in/image.tar -o /out
 ```
 
-The image runs as an unprivileged user (uid 65532). If the mounted rootfs contains root-only files (`/var/lib/rpm`, `/etc/sudoers.d`, …), add `--user 0` — the scanner still never executes, mounts or writes anything inside the target, and the target should stay mounted read-only. The Docker socket is **not** needed for `dir:`/`tar:`/`docker-archive:`/`oci-*` targets; do not mount it unless you deliberately want `docker:NAME` acquisition. Persist the vulnerability cache across runs with `-v startup-sbom-cache:/cache`.
+The image runs as an unprivileged user (uid 65532). If the mounted rootfs contains root-only files (`/var/lib/rpm`, `/etc/sudoers.d`, …), add `--user 0` — the scanner still never executes, mounts or writes anything inside the target, and the target should stay mounted read-only. The image does not include bubblewrap, so [chroot mode](chroot-mode.md) is not available in it: `--mode chroot` warns and falls back to static analysis. The Docker socket is **not** needed for `dir:`/`tar:`/`docker-archive:`/`oci-*` targets; do not mount it unless you deliberately want `docker:NAME` acquisition. Persist the vulnerability cache across runs with `-v startup-sbom-cache:/cache`.
 
 ## GitHub Action
 
@@ -73,7 +73,7 @@ The action installs uv, runs the scanner via `uvx`, writes a job-summary table, 
 ```yaml
 repos:
   - repo: https://github.com/morpheuslord/Startup-SBOM
-    rev: v2.0.0
+    rev: v2.0.1
     hooks:
       - id: startup-sbom            # or: startup-sbom-offline (adds --offline --quiet)
         args: [dir:rootfs, -f, cyclonedx, -o, sbom-out, --fail-on, high]
@@ -94,6 +94,7 @@ options = ScanOptions(
     vuln_sources=("osv", "arch"),  # add "nvd" with nvd_api_key for CPE fallback
     language_packages=True,
     integrity_check=False,
+    mode="static",  # "chroot" / "auto": sandboxed confirmation probes (dir:/host: targets)
 )
 report: Report = scan("docker-archive:image.tar", options)
 
@@ -105,7 +106,7 @@ for chain in report.attack_chains:
     print(chain.score, chain.ssvc_decision, chain.narrative)
 ```
 
-`scan()` accepts the same target schemes as the CLI, plus a `progress` callback, `strict=True` to make stage failures raise instead of degrade, and a `threading.Event` for cooperative cancellation. Rendering is a separate step:
+`scan()` accepts the same target schemes as the CLI, plus a `progress` callback, an `activity` callback that receives raw operations and stage digests as they happen ([Live Scanning](live-scanning.md)), `strict=True` to make stage failures raise instead of degrade, and a `threading.Event` for cooperative cancellation. Other `ScanOptions` fields mirror CLI flags, among them `derivative_fallback` (`--no-derivative-fallback`) and `cvss_impact_gate` (`--no-cvss-impact-gate`). Rendering is a separate step:
 
 ```python
 from pathlib import Path
@@ -124,4 +125,4 @@ The exit-code policy is available programmatically as `startup_sbom.cli.policy_v
 startup-sbom schema > report.schema.json
 ```
 
-prints the JSON Schema of the native report (`Report`, versioned via `metadata.schema_version`, currently `2.1`). The models forbid unknown fields, so any `report.json` produced by the tool validates against the schema of its version — use it to pin consumers, generate typed clients, or validate archived reports. See [Architecture](architecture.md) for the model itself and [Outputs](outputs.md) for the native format.
+prints the JSON Schema of the native report (`Report`, versioned via `metadata.schema_version`, currently `2.2`). The models forbid unknown fields, so any `report.json` produced by the tool validates against the schema of its version — use it to pin consumers, generate typed clients, or validate archived reports. See [Architecture](architecture.md) for the model itself and [Outputs](outputs.md) for the native format.

@@ -1,6 +1,6 @@
 # Intelligence and AI
 
-Three layers sit on top of the deterministic scan: an opt-in **online intelligence prefetch** (`src/startup_sbom/intel/`), a built-in **explainable-AI layer** that makes every verdict auditable (`explain/`, visualised by `viz/`), and an optional **agentic AI layer** (`ai/`, extra `startup-sbom[ai]`) that reads a finished report through guarded tools. The deterministic report always stays the source of truth; nothing in these layers can silently change a finding.
+Three layers sit on top of the deterministic scan: an opt-in **online intelligence prefetch** (`src/startup_sbom/intel/`), a built-in **explainable-AI layer** that makes every verdict auditable (`explain/`, visualised by `viz/`), and an optional **agentic AI layer** (`ai/`, extra `startup-sbom[ai]`) that reads a finished report through guarded tools — plus, in the same extra, a **live analyst** that narrates a scan while it runs. The deterministic report always stays the source of truth; nothing in these layers can silently change a finding.
 
 ## Online intelligence prefetch
 
@@ -41,4 +41,21 @@ Startup-SBOM is a glass-box system — a closed-form risk formula, published SSV
 * `startup-sbom ai mcp` — a **Model Context Protocol** server (official `mcp` SDK; stdio by default, streamable HTTP binds 127.0.0.1). Read-only by design: the single side-effectful tool, `scan_target`, is registered only when started with explicit `--allow-scan PREFIX` roots.
 * `startup-sbom ai serve` — the orchestrator and specialists over **A2A 1.0** (`fasta2a`; agent cards at the root and under `/agents/<name>`) and/or an **ACP** REST facade (ACP = *Agent Communication Protocol*): a dependency-free Starlette implementation of `GET /ping`, `GET /agents`, `GET /agents/{name}`, `POST /runs` (sync/async/stream) and `GET /runs/{id}`, since the archived `acp-sdk` is unusable. Both bind 127.0.0.1 by default; a bearer token (`STARTUP_SBOM_AGENT_TOKEN`) is required on any other interface.
 
+Importing the `ai` package sets `PYDANTIC_AI_NO_BANNER=1` unless you have set it yourself, so pydantic-ai's start-up banner does not tear through the live dashboard or the TUI.
+
 **Registry** (`ai/registry.py`): specialists are discoverable and extensible — built-ins, Python entry-point plugins in the `startup_sbom.agents` group (loaded only when explicitly allow-listed, since loading runs third-party code), and remote A2A/ACP agents by URL (never proxied through the local servers). `startup-sbom ai agents` lists them all.
+
+## Live analyst vs. post-scan assessment
+
+`startup-sbom scan --ai-live` ([Live Scanning](live-scanning.md#the-live-analyst)) and `startup-sbom ai analyze` both use the providers above, but they do different jobs:
+
+| | Live analyst (`--ai-live`) | Post-scan assessment (`ai analyze`) |
+|---|---|---|
+| When | while the scan runs, once per finished stage | on a finished `report.json` |
+| Input | the stage digest, its key numbers and the last 12 raw operations | the whole report, through paged, size-capped read-only tools |
+| Tools | none | read-only report tools, optional web search |
+| Model | the provider's cheap specialist model, or `--ai-model` | orchestrator plus specialists, by `--profile` or `--model` |
+| Spending cap | `--ai-budget`, default USD 0.10 | `--max-cost`, default USD 1.00 |
+| Output | display-only commentary in the dashboard / TUI and after the console summary; not stored in the report | an `AIAssessment` attached to the report, grounding-checked |
+
+The live analyst is a reading aid for whoever watches the scan. Its commentary is not grounding-checked and is never written into the report, so nothing downstream — SARIF, VEX, `--fail-on` — depends on it. Use `ai analyze` when you need a stored, checked assessment.

@@ -8,9 +8,24 @@
 
 Startup-SBOM is a read-only static analyser for Linux root filesystems, containers
 and images. It does not stop at "which packages are installed": it maps what
-actually runs at boot — through which services, as which user, exposed on which
-ports — and turns that context into concrete, ranked security findings. Nothing in
-the target is ever executed, mounted, extracted or modified.
+actually runs at boot — through which services, timers, cron jobs and device
+rules, as which user, exposed on which ports — and turns that context into
+concrete, ranked security findings. Nothing in the target is ever mounted,
+extracted or modified, and in the default static mode nothing is executed.
+
+!!! tip "What's new in 2.0.1 (latest release)"
+    * **[Chroot mode](chroot-mode.md)**: `--mode chroot` confirms the static results with the
+      target's own loader, `systemctl` and package manager, run only inside an unprivileged,
+      read-only, network-less bubblewrap sandbox.
+    * **Triggers**: every threat says what activates the vulnerable code, who can fire it and
+      as which user; cron jobs and udev rules are new trigger sources, and code nothing runs
+      can no longer be reported as a path to root
+      ([Vulnerabilities and Threats](vulnerabilities-and-threats.md)).
+    * **[Live scanning](live-scanning.md)**: a live dashboard of stages, findings and raw
+      operations, a `--journal`, and an optional LLM analyst commenting on each stage.
+    * Rolling Debian derivatives such as Kali are matched against Debian testing advisories.
+
+    The full list is in the [changelog](https://github.com/morpheuslord/Startup-SBOM/blob/main/CHANGELOG.md).
 
 ## Three questions most SBOM tools can't answer
 
@@ -77,6 +92,13 @@ archives are indexed in place rather than extracted, network access is an HTTPS
 allow-list that `--offline` disables entirely, and every gap in vulnerability
 coverage is reported instead of silently returning "0 vulnerabilities".
 
+Two modes, one report: **static** (the default) only reads files; opt-in
+**chroot mode** (`--mode chroot`) also asks the target's own loader, `systemctl`
+and package manager to confirm the static results, running them only inside an
+unprivileged, read-only, network-less sandbox ([Chroot Mode](chroot-mode.md)).
+While a scan runs, a live dashboard shows each stage, what it found and the raw
+operations behind it, optionally narrated by an LLM ([Live Scanning](live-scanning.md)).
+
 ## Where to go next
 
 <div class="grid cards" markdown>
@@ -107,14 +129,21 @@ coverage is reported instead of silently returning "0 vulnerabilities".
     ---
 
     systemd (incl. offline hardening scores), SysV, OpenRC, runit, s6,
-    supervisord, inittab and container entrypoints.
+    supervisord, inittab, container entrypoints, cron and udev.
 
 -   **[Vulnerabilities and Threats](vulnerabilities-and-threats.md)**
 
     ---
 
-    Advisory matching, threat reversal, SSVC decisions, attack chains and
-    supply-chain blast radius.
+    Advisory matching, threat reversal, triggers, SSVC decisions, attack
+    chains and supply-chain blast radius.
+
+-   **[Chroot Mode](chroot-mode.md)**
+
+    ---
+
+    Opt-in confirmation of static results by the target's own tools, inside
+    an unprivileged bubblewrap sandbox — guarantees, preconditions and limits.
 
 -   **[Outputs](outputs.md)**
 
@@ -122,6 +151,13 @@ coverage is reported instead of silently returning "0 vulnerabilities".
 
     Native JSON, CycloneDX, SPDX, SARIF, VEX, Markdown, HTML, PDF, DOT and
     Mermaid — plus exit codes and CI policy gates.
+
+-   **[Live Scanning](live-scanning.md)**
+
+    ---
+
+    The live dashboard, raw operations, the JSON-lines journal and the
+    optional live analyst.
 
 -   **[Intelligence and AI](intelligence-and-ai.md)**
 

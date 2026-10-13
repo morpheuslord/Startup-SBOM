@@ -24,7 +24,9 @@ answers three questions most SBOM tools can't:
    openssh-server (sshd, `ssh.service`, enabled at boot, runs as root) to execute
    code as root — EPSS 0.94, known exploited. Fix: upgrade to 1:9.2p1-2+deb12u3."*
    Every finding is placed in context: is it reachable at boot, through which service,
-   linked by which binary, as which user, network-exposed, mitigated by which
+   linked by which binary, what triggers it (boot, socket, timer, cron, D-Bus, udev
+   device event, setuid binary, kernel) and who can fire that trigger, as which user,
+   network-exposed, mitigated by which
    systemd hardening, mapped to MITRE ATT&CK, with a CISA SSVC decision
    (Track / Track\* / Attend / Act).
 2. **Chained attacks.** A privilege-state attack graph
@@ -39,8 +41,11 @@ answers three questions most SBOM tools can't:
    alone miss. It also flags provenance risks: third-party repositories, unsigned or
    locally built packages, unmanaged binaries, modified files and EOL distributions.
 
-It is **read-only by design**: nothing in the target is executed, mounted,
-extracted or modified, and symlinks can never escape the analysed root.
+It is **read-only by design**: nothing in the target is mounted, extracted or
+modified, symlinks can never escape the analysed root, and in the default static
+mode nothing in the target is executed. The opt-in chroot mode (`--mode chroot`)
+runs a few of the target's own tools to confirm the static results, only inside
+an unprivileged, read-only, network-less bubblewrap sandbox.
 
 ## Install
 
@@ -94,6 +99,9 @@ sudo startup-sbom scan host: -f markdown
 
 # CI gate: fail when anything warrants immediate action
 startup-sbom scan oci-archive:img.tar -f sarif --fail-on act
+
+# Confirm with the target's own tools in a sandbox (needs bubblewrap), keep a journal
+startup-sbom scan dir:/mnt/target_root --mode chroot --journal scan.jsonl -f html
 ```
 
 | Option | Meaning |
@@ -107,10 +115,17 @@ startup-sbom scan oci-archive:img.tar -f sarif --fail-on act
 | `--no-link-analysis` | Skip ELF library reachability |
 | `--integrity` | Verify installed files against package-database digests |
 | `--boot-timing FILE` | `systemd-analyze plot` SVG or `blame` output captured on the target |
+| `--mode` | `static` (default, reads files only), `chroot` (also run the target's loader, `systemctl` and package manager in a bubblewrap sandbox) or `auto` (chroot when possible) |
+| `--no-derivative-fallback` | Don't match rolling Debian derivatives (Kali, …) against Debian testing advisories |
+| `--no-cvss-impact-gate` | Let confidentiality-only (`I:N/A:N`) flaws count as code execution |
 | `--platform` | Select a platform from a multi-arch image, e.g. `linux/arm64` |
 | `--cdx-spec` | CycloneDX `1.5`, `1.6` (default) or `1.7` |
 | `--fail-on` | `low` … `critical` (vulnerability severity) or `attend` / `act` (SSVC) |
 | `--prefetch-intel` | Fetch advisories, exploit references and articles for the top findings (opt-in, online) |
+| `--live` / `--no-live` | Live dashboard of stages, digests and raw operations on stderr (default: on a terminal) |
+| `--journal FILE` | Write every stage, raw operation, digest and analyst note as JSON lines |
+| `--ai-live` | An LLM comments on each stage while the scan runs (`ai` extra; display-only) |
+| `--ai-provider`, `--ai-model`, `--ai-budget` | Live analyst provider, `provider:model-id`, and spending cap in USD (default `0.10`) |
 | `-q`, `-v`, `--debug` | Quiet / verbose / debug |
 
 Other commands: `startup-sbom tui` (interactive UI), `startup-sbom ai …` (AI analysis
@@ -141,6 +156,19 @@ boot" is not the same as "unreachable". Opt in with `--vex-unreachable-not-affec
 
 ## Beyond the scanner
 
+**Chroot mode.** `--mode chroot` asks the target's own dynamic loader, `systemctl`
+and package manager to confirm what static analysis inferred: link closures,
+unit enablement and the package inventory. They run as `nobody` in a bubblewrap
+sandbox with no capabilities, no network, a read-only root, resource limits and
+timeouts. Directory targets (`dir:`, `host:`) on a Linux host with unprivileged user
+namespaces only; otherwise the scan stays static and says why.
+
+**Live progress.** On a terminal, `scan` shows each stage as it runs with a
+one-line digest of what it found and a rolling pane of raw operations (HTTP
+requests, package databases read, ELF closures, sandboxed commands). `--journal`
+records the same as JSON lines; `--ai-live` adds a cheap model's running
+commentary, which is never written into the report.
+
 **Explainable results.** Every risk score decomposes exactly into its factors
 (baseline + contributions = total), every SSVC decision carries its decision path
 and the flips that would change it, and the report proposes a minimal fix plan
@@ -148,7 +176,7 @@ that breaks every attack chain. The console, HTML, Markdown and PDF outputs rend
 these as charts and graphs.
 
 **Interactive TUI.** `startup-sbom tui` walks through target selection, scan
-settings, a live scan and an eight-tab results browser with search, filters,
+settings, a live scan (stage digests, raw operations, optional live analyst) and an eight-tab results browser with search, filters,
 explanations, intel articles and export.
 
 **Intel prefetch.** `--prefetch-intel` gathers vendor advisories, exploit and PoC
@@ -179,7 +207,7 @@ A2A / ACP (Agent Communication Protocol) agent servers.
 
 ```yaml
 - repo: https://github.com/morpheuslord/Startup-SBOM
-  rev: v2.0.0
+  rev: v2.0.1
   hooks:
     - id: startup-sbom
       args: [scan, "dir:rootfs", --offline, --fail-on, act]
@@ -201,9 +229,9 @@ for chain in report.attack_chains:
 |---|---|
 | Package databases | dpkg (incl. distroless `status.d`), rpm (sqlite, Berkeley DB, NDB, without host rpm), apk, pacman |
 | Distributions | Debian, Ubuntu, RHEL, Rocky, AlmaLinux, CentOS, Fedora, Oracle, Amazon Linux, SUSE/openSUSE, Azure Linux, Alpine, Wolfi/Chainguard, Arch |
-| Service managers | systemd (search paths, drop-ins, masks, templates, aliases, sockets, timers, boot graph, hardening exposure), SysV/LSB, OpenRC, runit, s6/s6-overlay, supervisord, BusyBox inittab, container entrypoints (tini/dumb-init/`sh -c` unwrapped) |
+| Service managers | systemd (search paths, drop-ins, masks, templates, aliases, sockets, timers, boot graph, hardening exposure), SysV/LSB, OpenRC, runit, s6/s6-overlay, supervisord, BusyBox inittab, container entrypoints (tini/dumb-init/`sh -c` unwrapped); cron jobs and udev rule programs, counted only when their daemon starts |
 | Inputs | directories, live host, rootfs tarballs (gz/xz/bz2/zstd), docker/podman save archives, OCI layouts and archives, docker/podman/nerdctl containers and images |
-| Vulnerability intelligence | OSV.dev (distro-aware, source-package matching), Arch security tracker, NVD (opt-in), FIRST EPSS, CISA KEV, endoflife.date |
+| Vulnerability intelligence | OSV.dev (distro-aware, source-package matching; rolling Debian derivatives such as Kali against Debian testing, at reduced confidence), Arch security tracker, NVD (opt-in), FIRST EPSS, CISA KEV, endoflife.date |
 | Language packages | Python, npm, Go (buildinfo), Java (Maven metadata), Rust (cargo-auditable) |
 
 When a distribution is not covered by a vulnerability source, the report says so
@@ -211,7 +239,12 @@ explicitly under coverage limitations. It never returns a silent "0 vulnerabilit
 
 ## Security model
 
-* Never executes, mounts, chroots or uses `sudo`; never writes into the target.
+* Never mounts, chroots or uses `sudo`; never writes into the target.
+* In the default static mode, never executes anything from the target. With
+  `--mode chroot`/`auto`, the target's loader, `systemctl` and package manager run
+  only inside a bubblewrap sandbox: a new user namespace as `nobody`, all
+  capabilities dropped, no network, the target root read-only, a cleared
+  environment, resource limits, timeouts and output caps.
 * All target paths are resolved inside the analysed root, with a symlink budget.
   Non-regular files are refused and reads are size-capped.
 * Archives are indexed in place, never extracted. Setuid bits and file capabilities
@@ -226,9 +259,11 @@ See [SECURITY.md](https://github.com/morpheuslord/Startup-SBOM/blob/main/SECURIT
 
 `python3 main.py …` still works through a compatibility shim that maps the old
 flags. The old `chroot` mode has been removed: it bind-mounted the target over the
-host's `/usr`, `/bin` and `/lib` and ran target binaries as root. Capture
-`systemd-analyze plot > boot.svg` on the target and pass `--boot-timing boot.svg`
-instead. See the [refactor plan](https://github.com/morpheuslord/Startup-SBOM/blob/main/Docs/Refactor%20Plan.md) for every change.
+host's `/usr`, `/bin` and `/lib` and ran target binaries as root.
+`--analysis-mode chroot` now maps to the sandboxed `--mode chroot`, which never
+mounts over the host or runs anything as root. It does not produce boot timings:
+capture `systemd-analyze plot > boot.svg` on the target and pass
+`--boot-timing boot.svg`. See the [refactor plan](https://github.com/morpheuslord/Startup-SBOM/blob/main/Docs/Refactor%20Plan.md) for every change.
 
 ## Citation
 

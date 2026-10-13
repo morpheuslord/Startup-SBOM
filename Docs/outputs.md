@@ -18,7 +18,7 @@ Every output format renders from the same canonicalised `Report` model ([Archite
 | `mermaid` | `attack-graph.mmd` | Mermaid attack / blast-radius graph |
 | `pdf` | `report.pdf` | Typst-rendered PDF (optional extra `startup-sbom[pdf]`) |
 
-Without `-o -`, a Rich console summary is printed as well (`report/console.py`); suppress it with `--quiet`. All files are written atomically.
+Without `-o -`, a Rich console summary is printed as well (`report/console.py`); suppress it with `--quiet`. All files are written atomically. Two streams sit beside the report rather than in it: the `--journal` JSON-lines file of stages, raw operations and digests, and the live analyst's notes printed after the console summary — see [Live Scanning](live-scanning.md).
 
 **CycloneDX** follows what Trivy, Syft/Grype and Dependency-Track consume: exactly one `operating-system` component with dependency edges to every package, purls as bom-refs, services as CycloneDX services with endpoints, and vulnerabilities carrying CVSS ratings, CWEs and EPSS/KEV properties. Threats and attack chains stay in the native report, linked through a `threat-model` external reference.
 
@@ -26,13 +26,34 @@ Without `-o -`, a Rich console summary is printed as well (`report/console.py`);
 
 **SARIF** emits one rule per vulnerability id plus one rule per attack-chain and supply-chain finding kind. Results point at in-image paths relative to `ROOTFS` and carry a stable `primaryLocationLineHash` (the analysed filesystem is not part of the repository). GitHub's limits — 25 000 results/rules per run, 20 tags per rule, 1 000 locations per result — are respected.
 
-**VEX** is conservative by design: "not observed on an execution path" is not proof of "not affected" (cron jobs, login shells, `dlopen`, files parsed by other processes are not fully visible to static analysis). Installed-only vulnerabilities are therefore `under_investigation`; the operator can opt in to `not_affected` with justification `vulnerable_code_not_in_execute_path` via `--vex-unreachable-not-affected`, but KEV-listed vulnerabilities never are. The CycloneDX VEX variant is an independent document whose `affects` refs are BOM-Links (`urn:cdx:<serial>/<version>#<bom-ref>`), which is what Trivy requires and what Dependency-Track ingests via `PUT /api/v1/vex`.
+**VEX** is conservative by design: "not observed on an execution path" is not proof of "not affected" (login shells, `dlopen`, files parsed by other processes are not fully visible to static analysis). Installed-only vulnerabilities are therefore `under_investigation`; the operator can opt in to `not_affected` with justification `vulnerable_code_not_in_execute_path` via `--vex-unreachable-not-affected`, but KEV-listed vulnerabilities never are. The CycloneDX VEX variant is an independent document whose `affects` refs are BOM-Links (`urn:cdx:<serial>/<version>#<bom-ref>`), which is what Trivy requires and what Dependency-Track ingests via `PUT /api/v1/vex`.
 
 **Markdown** renders on GitHub, in PR comments and in Actions job summaries; Mermaid attack graphs render natively on GitHub. Every string from the scanned system is neutralised against Markdown/HTML injection, table pipes and `@`-mentions.
 
 **HTML** is a single file that works offline: the stylesheet and script are inlined and authorised by SHA-256 hashes under a `default-src 'none'` Content-Security-Policy, so the page makes no network requests and injected markup could not execute even if escaping failed. Tables render server-side (readable without JavaScript); the script adds sorting, filtering and an interactive SVG attack-graph / blast-radius view.
 
-**`dot` / `mermaid`** export the combined attack graph and supply-chain blast-radius graph: privilege states as nodes, attack steps as labelled edges, with surrogate node ids and escaped labels so names from the scanned system can never inject graph syntax.
+**`dot` / `mermaid`** export the combined attack graph and supply-chain blast-radius graph: privilege states as nodes, attack steps as labelled edges, with surrogate node ids and escaped labels so names from the scanned system can never inject graph syntax. Only supply-chain nodes that lie on an edge are drawn (a blast-radius entry with no path and no service would be a free-floating node). Distinct packages that would share a label are told apart by their version — for Go modules also the binary they are embedded in, e.g. `stdlib go1.18 (mkcert)` — then by the shortest distinguishing part of their location, and finally by a `#n` ordinal. An empty graph (Mermaid or DOT) shows a single node saying *no attack chain or supply-chain path was found* instead of a blank box.
+
+## What the reports show
+
+The human-readable reports carry two items that come from the threat model and the scan mode:
+
+* **Trigger column.** The threat tables of the console, Markdown and HTML reports have a *Trigger* column with each threat's strongest trigger — `kind subject (fired by)`, plus `+N` when there are more, e.g. `setuid /usr/bin/passwd (local user) +2` or `boot systemd:ssh.service (network)` — and `none` when nothing on the system runs the vulnerable code. See [Triggers](vulnerabilities-and-threats.md#triggers).
+* **Analysis mode.** The coverage section starts with an *Analysis mode* line: `static`, or `chroot (sandboxed probes: loader, packages, systemd)` when [chroot mode](chroot-mode.md) ran.
+
+## Native report schema 2.2
+
+`metadata.schema_version` is `2.2`. Compared with 2.1 it adds:
+
+| Field | Meaning |
+|---|---|
+| `threats[].triggers[]` | `Trigger` objects: `kind` (`boot`, `socket`, `timer`, `path`, `dbus`, `cron`, `device`, `entrypoint`, `setuid`, `kernel`), `subject`, `fired_by`, `runs_as`, `via`, `detail`; empty when nothing activates the code |
+| `metadata.coverage.analysis_mode` | `static` (default) or `chroot` |
+| `metadata.coverage.runtime_probes` | the chroot-mode probes that ran (`loader`, `packages`, `systemd`) |
+| `services[].activation` value `device` | the program is run by a udev rule on a matching device event |
+| `services[].init_system` values `cron`, `udev` | scheduled jobs and udev rule programs ([Init Systems](init-systems.md#cron)) |
+
+Libraries confirmed by the chroot-mode loader probe appear in `binaries[].libraries` with `via: "loader"`. As before, `startup-sbom schema` prints the exact JSON Schema.
 
 ## PDF
 

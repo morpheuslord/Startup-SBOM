@@ -1,10 +1,10 @@
 # Introduction
 
-Startup-SBOM statically analyses a Linux root filesystem, container or image and answers questions ordinary SBOM tools cannot: not just *which* packages are installed, but which of them actually run at boot, through which services, as which user, exposed on which ports — and what an attacker could do about it. This page explains the questions the tool answers, the design principles behind it, and gives a quick tour of the command line. The deeper material lives in the other documents: [Architecture](architecture.md), [Package Databases](package-databases.md), [Init Systems](init-systems.md), [Vulnerabilities and Threats](vulnerabilities-and-threats.md), [Outputs](outputs.md), [Intelligence and AI](intelligence-and-ai.md) and [Integration](integration.md).
+Startup-SBOM statically analyses a Linux root filesystem, container or image and answers questions ordinary SBOM tools cannot: not just *which* packages are installed, but which of them actually run at boot, through which services, as which user, exposed on which ports — and what an attacker could do about it. This page explains the questions the tool answers, the design principles behind it, and gives a quick tour of the command line. The deeper material lives in the other documents: [Architecture](architecture.md), [Package Databases](package-databases.md), [Init Systems](init-systems.md), [Vulnerabilities and Threats](vulnerabilities-and-threats.md), [Chroot Mode](chroot-mode.md), [Outputs](outputs.md), [Live Scanning](live-scanning.md), [Intelligence and AI](intelligence-and-ai.md) and [Integration](integration.md).
 
 ## What the tool answers
 
-**Vulnerability → threat reversal.** A CVE list says what is broken; it does not say what is at risk *on this system*. Startup-SBOM places every matched vulnerability into the scanned system's context: is the vulnerable code reachable at boot, through which service, linked by which binary, running as which user, listening on which addresses, mitigated by which systemd hardening? Each vulnerability becomes a `Threat` with attacker pre- and post-conditions ("a remote attacker who can reach TCP/22 gains root"), consequence classes, MITRE ATT&CK techniques, STRIDE categories, a CISA SSVC decision (Track / Track\* / Attend / Act) and a transparent, exactly decomposable 0–100 risk score. See [Vulnerabilities and Threats](vulnerabilities-and-threats.md).
+**Vulnerability → threat reversal.** A CVE list says what is broken; it does not say what is at risk *on this system*. Startup-SBOM places every matched vulnerability into the scanned system's context: is the vulnerable code reachable at boot, through which service, linked by which binary, running as which user, listening on which addresses, mitigated by which systemd hardening? Each vulnerability becomes a `Threat` with its triggers — what activates the vulnerable code (boot, a socket, a timer or cron job, D-Bus, a device event, a setuid binary, the kernel) and who can fire it — attacker pre- and post-conditions ("a remote attacker who can reach TCP/22 gains root"), consequence classes, MITRE ATT&CK techniques, STRIDE categories, a CISA SSVC decision (Track / Track\* / Attend / Act) and a transparent, exactly decomposable 0–100 risk score. See [Vulnerabilities and Threats](vulnerabilities-and-threats.md).
 
 **Chained attacks.** Single findings understate risk when they compose. A forward-chaining rule engine (rules R1–R12) derives edges in the privilege lattice `remote → local:<user> → root → container escape / host → persistence` from vulnerabilities *and* misconfigurations — setuid and capability binaries, privileged containers, mounted engine sockets, kernel CVEs, writable units — prunes and downgrades them by observed hardening, and enumerates ranked attack chains scored by likelihood × impact.
 
@@ -12,7 +12,7 @@ Startup-SBOM statically analyses a Linux root filesystem, container or image and
 
 ## Design principles
 
-* **Read-only, always.** Nothing in the target is ever executed, mounted, chrooted, extracted or modified, and `sudo` is never used. The 1.x "chroot" mode, which bind-mounted the target over the host and ran target binaries as root, is gone (see [`Refactor Plan.md`](Refactor%20Plan.md) for the full fix ledger).
+* **Read-only, always.** Nothing in the target is ever mounted, chrooted, extracted or modified, and `sudo` is never used. In the default **static** mode nothing from the target is executed either. The 1.x "chroot" mode, which bind-mounted the target over the host and ran target binaries as root, is gone (see [`Refactor Plan.md`](Refactor%20Plan.md) for the full fix ledger); its opt-in 2.x replacement, `--mode chroot`, runs a few of the target's own tools only inside an unprivileged, read-only, network-less bubblewrap sandbox to confirm the static results ([Chroot Mode](chroot-mode.md)).
 * **Root-confined virtual filesystem.** Every analyser reads the target exclusively through the `RootFS` abstraction, which resolves symlinks against the *image* root with the semantics of `openat2(RESOLVE_IN_ROOT)`: absolute link targets re-root at the image root, `..` can never climb above it, and loops are bounded. Host files can never leak into a report.
 * **No extraction.** Tarballs, image archives and OCI layouts are indexed header-only and read in place by seeking; compressed layers are decompressed exactly once into a size-budgeted private workspace. Setuid bits, ownership and file capabilities survive for analysis, and no hostile archive member can escape.
 * **Offline-first with caching.** Vulnerability feeds (KEV, EPSS, OSV, …) are cached on disk with TTL and ETag revalidation; `--offline` guarantees no socket is ever opened and serves fresh-or-stale cache only. `startup-sbom db update` pre-populates the cache for air-gapped use. Network access, when allowed, is HTTPS-only to an explicit host allow-list with TLS verification always on.
@@ -67,6 +67,11 @@ sudo startup-sbom scan host: -f markdown
 
 # Air-gapped: refresh the cache elsewhere, then
 startup-sbom scan tar:rootfs.tar.zst --offline -f json
+
+# Confirm static results with the target's own tools (sandboxed), keep a journal
+startup-sbom scan dir:/mnt/target_root --mode chroot --journal scan.jsonl -f html -o out/
 ```
+
+On a terminal, `scan` shows a live dashboard of stages, digests and raw operations on stderr (`--no-live` turns it off); `--ai-live` adds an LLM commentary on each stage. See [Live Scanning](live-scanning.md).
 
 Exit codes are stable: `0` success, `1` the `--fail-on` threshold was reached, `2` usage or target error, `3` internal error. The full flag reference is in the [README](https://github.com/morpheuslord/Startup-SBOM#readme); every output format is described in [Outputs](outputs.md).
