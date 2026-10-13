@@ -139,6 +139,12 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
+          # A release made by hand on the Releases page (which also creates the tag
+          # and triggers this workflow) is left exactly as it is: title, notes, assets.
+          if gh release view "$GITHUB_REF_NAME" --json tagName > /dev/null 2>&1; then
+            echo "::notice::A GitHub release for ${GITHUB_REF_NAME} already exists; not creating another."
+            exit 0
+          fi
           flags=(--verify-tag --title "Startup-SBOM ${GITHUB_REF_NAME}" --notes-file "$RUNNER_TEMP/notes.md")
           case "$GITHUB_REF_NAME" in
             *a[0-9]*|*b[0-9]*|*rc[0-9]*) flags+=(--prerelease --latest=false) ;;
