@@ -8,6 +8,23 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
+## [2.0.2] - 2026-10-13
+
+Bug-fix release.
+
+### Fixed
+
+- **Live analyst stopped with an error.** With `--ai-live` (or the TUI's live analyst)
+  on Claude Haiku 4.5, the analyst failed at the first stage with
+  "`max_tokens` must be greater than `thinking.budget_tokens`". It no longer sets its
+  own token limit, so the model can think as usual and the request is accepted.
+  Spending is still capped by `--ai-budget`.
+- **Release workflow failed when the release already existed.** If a GitHub release for
+  the tag was already there (for example one made on the Releases page), the workflow
+  stopped with an error. It now leaves that release as it is and finishes.
+- **Container image rebuilt on every release run.** Re-running a release no longer
+  rebuilds and re-pushes an image that is already published for that version.
+
 ## [2.0.1] - 2026-10-13
 
 ### Added
@@ -185,6 +202,7 @@ Initial public release (`main.py` + `sbom_manager/`): dpkg/rpm startup-service m
 NVD lookups, CycloneDX output and service flowcharts. Archived at DOI
 [10.5281/zenodo.19307312](https://doi.org/10.5281/zenodo.19307312).
 
+[2.0.2]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/morpheuslord/Startup-SBOM/compare/release-1...v2.0.0
 [release-1]: https://github.com/morpheuslord/Startup-SBOM/tree/release-1

@@ -13,7 +13,13 @@ rules, as which user, exposed on which ports — and turns that context into
 concrete, ranked security findings. Nothing in the target is ever mounted,
 extracted or modified, and in the default static mode nothing is executed.
 
-!!! tip "What's new in 2.0.1 (latest release)"
+!!! tip "Latest release: 2.0.2"
+    **2.0.2** is a bug-fix release: the live analyst no longer stops with an error on
+    Claude Haiku, and re-running a release no longer fails or re-publishes what already
+    exists.
+
+    **New in 2.0.1:**
+
     * **[Chroot mode](chroot-mode.md)**: `--mode chroot` confirms the static results with the
       target's own loader, `systemctl` and package manager, run only inside an unprivileged,
       read-only, network-less bubblewrap sandbox.
