@@ -66,13 +66,6 @@ DEFAULT_BUDGET_USD = 0.10
 STAGE_TIMEOUT = 45.0
 MAX_STAGE_CHARS = 4_000
 MAX_OPS = 12
-MAX_TOKENS = 600  # the visible commentary
-#: The narrator keeps the model's reasoning visible, at the smallest effort level.
-THINKING_LEVEL = "minimal"
-#: Extra output room when thinking is on.  Budget-based providers count the thinking
-#: budget inside ``max_tokens`` and reject a request whose ``max_tokens`` does not
-#: exceed it (Anthropic: "minimal" = 1024, "low" = 2048 budget tokens).
-THINKING_HEADROOM = 2_048
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,13 +330,11 @@ def _build(
         names = (name,)
         label = name
     settings["timeout"] = min(float(settings.get("timeout", STAGE_TIMEOUT)), STAGE_TIMEOUT)
-    if settings.get("thinking"):
-        # Keep thinking (it is shown live) but at the smallest level, and leave room for
-        # the answer beyond its budget, or the provider rejects the request.
-        settings["thinking"] = THINKING_LEVEL
-        settings["max_tokens"] = MAX_TOKENS + THINKING_HEADROOM
-    else:
-        settings["max_tokens"] = MAX_TOKENS
+    # Thinking stays as the profile sets it (it is shown live), and no max_tokens is
+    # imposed: budget-based providers reject max_tokens <= thinking.budget_tokens, so
+    # pydantic-ai's default (sized above any thinking budget) is used.  Spending is
+    # bounded by the cost guard below, the prompt asks for a few sentences.
+    settings.pop("max_tokens", None)
     guard = make_guard(
         max_cost_usd,
         names,
