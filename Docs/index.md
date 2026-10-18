@@ -13,7 +13,11 @@ rules, as which user, exposed on which ports — and turns that context into
 concrete, ranked security findings. Nothing in the target is ever mounted,
 extracted or modified, and in the default static mode nothing is executed.
 
-!!! tip "Latest release: 2.0.2"
+!!! tip "Latest release: 2.0.3"
+    **2.0.3** lists the [GitHub Action](integration.md#github-action) on the GitHub
+    Marketplace as *Startup-SBOM Scan*, and `uses: morpheuslord/Startup-SBOM@v2` now
+    resolves to the latest 2.x release.
+
     **2.0.2** is a bug-fix release: the live analyst no longer stops with an error on
     Claude Haiku, and re-running a release no longer fails or re-publishes what already
     exists.
