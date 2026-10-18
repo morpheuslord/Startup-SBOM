@@ -8,6 +8,23 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
+## [2.0.3] - 2026-10-18
+
+GitHub Marketplace release.
+
+### Changed
+
+- **The GitHub Action is on the GitHub Marketplace** as *Startup-SBOM Scan*. Its
+  description is shortened to fit the Marketplace's 125-character limit; the action's
+  inputs, outputs and behaviour are unchanged.
+- The container image is built with uv 0.13.1.
+
+### Fixed
+
+- **`uses: morpheuslord/Startup-SBOM@v2` did not resolve.** The README and docs showed
+  `@v2`, but no `v2` tag existed. A `v2` tag now follows the latest 2.x release. For
+  supply-chain safety, pinning to a full commit SHA is still recommended.
+
 ## [2.0.2] - 2026-10-13
 
 Bug-fix release.
@@ -202,6 +219,7 @@ Initial public release (`main.py` + `sbom_manager/`): dpkg/rpm startup-service m
 NVD lookups, CycloneDX output and service flowcharts. Archived at DOI
 [10.5281/zenodo.19307312](https://doi.org/10.5281/zenodo.19307312).
 
+[2.0.3]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/morpheuslord/Startup-SBOM/compare/release-1...v2.0.0
