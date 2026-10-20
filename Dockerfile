@@ -24,7 +24,7 @@
 # Builder: resolve the locked dependency set into a self-contained venv.
 # Both stages are pinned by digest; Dependabot (docker ecosystem) bumps them.
 # ---------------------------------------------------------------------------
-FROM ghcr.io/astral-sh/uv:0.13.1-python3.14-trixie-slim@sha256:112f89760bd54b63c84d140151ea5f3d849278e54f6f939f2c40a57f3e33d895 AS builder
+FROM ghcr.io/astral-sh/uv:0.13.2-python3.14-trixie-slim@sha256:dccb34db65d1606b7c47d9058da92ab4f54ad632da1ab5dcb51b128d1f03e696 AS builder
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
