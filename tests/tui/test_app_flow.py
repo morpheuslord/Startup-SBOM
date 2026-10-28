@@ -133,11 +133,15 @@ def test_settings_widgets_map_to_options_and_cli(make_app: MakeApp, tmp_path: Pa
             screen.query_one("#formats", SelectionList).select("sarif")
             screen.query_one("#output_dir", Input).value = str(tmp_path / "out")
             screen.query_one("#fail_on", Select).value = "high"
-            await pilot.pause(0.1)
-            # offline greys out NVD and the online-only intel/AI widgets
+            # offline greys out NVD and the online-only intel/AI widgets; the
+            # Changed handlers run asynchronously, so poll rather than sleep
             sources = screen.query_one("#sources", SelectionList)
-            assert sources.get_option("nvd").disabled
-            assert screen.query_one("#ai_enabled", Checkbox).disabled
+            ai_enabled = screen.query_one("#ai_enabled", Checkbox)
+            await wait_until(
+                pilot,
+                lambda: sources.get_option("nvd").disabled and ai_enabled.disabled,
+                message="offline did not disable NVD and the AI toggle",
+            )
             values, errors = screen.read_values()
             assert errors == []
             from startup_sbom.tui.state import build_request, equivalent_cli
@@ -152,9 +156,9 @@ def test_settings_widgets_map_to_options_and_cli(make_app: MakeApp, tmp_path: Pa
             assert "--offline" in cli
             assert "-f sarif" in cli
             assert "--fail-on high" in cli
-            preview = str(screen.query_one("#cli-preview", Static).content)
-            assert "startup-sbom scan" in preview
-            assert "--offline" in preview
+            preview_widget = screen.query_one("#cli-preview", Static)
+            await wait_until(pilot, lambda: "--offline" in str(preview_widget.content))
+            assert "startup-sbom scan" in str(preview_widget.content)
 
     run_ui(main())
 
