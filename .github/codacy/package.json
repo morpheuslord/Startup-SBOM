@@ -9,10 +9,12 @@
     "argparse": "^2.0.1",
     "decode-uri-component": "^0.5.0",
     "deepmerge-ts": "^8.0.2",
+    "fast-uri": "^3.1.9",
     "fast-xml-parser": "^5.7.0",
     "katex": "^0.19.0",
     "minimatch@^9.0.0": "^9.0.7",
     "package-json": "^7.0.0",
-    "postcss-selector-parser": "^7.1.6"
+    "postcss-selector-parser": "^7.1.6",
+    "undici": "^6.29.1"
   }
 }
