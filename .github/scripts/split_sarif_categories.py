@@ -5,7 +5,13 @@ Code scanning rejects several runs under one category, so each run gets an
 ``automationDetails.id`` of ``<prefix>-<tool>/``.  Artifact URIs are also
 percent-encoded (Codacy emits raw spaces, which are not valid URIs).
 
-Usage: split_sarif_categories.py IN.sarif OUT.sarif PREFIX
+Codacy only writes a run for a tool that reported issues.  Code scanning closes
+an alert only when a new analysis for the same tool and category no longer
+reports it, so each expected TOOL with no run gets an empty one (and Codacy's
+empty ``codacy-analysis`` placeholder run is dropped).  Without this, alerts
+stay open after the last finding of a tool is fixed.
+
+Usage: split_sarif_categories.py IN.sarif OUT.sarif PREFIX [TOOL ...]
 """
 
 from __future__ import annotations
@@ -35,10 +41,24 @@ def _encode_uris(node: Any) -> Any:
     return node
 
 
-def main(src: str, dst: str, prefix: str) -> int:
+def main(src: str, dst: str, prefix: str, *tools: str) -> int:
     sarif = json.loads(Path(src).read_text(encoding="utf-8"))
+    runs = [
+        run
+        for run in sarif.get("runs", [])
+        if not tools
+        or run.get("results")
+        or run.get("tool", {}).get("driver", {}).get("name") != "codacy-analysis"
+    ]
+    present = {_slug(run.get("tool", {}).get("driver", {}).get("name", "")) for run in runs}
+    runs += [
+        {"tool": {"driver": {"name": tool, "rules": []}}, "results": []}
+        for tool in tools
+        if _slug(tool) not in present
+    ]
+    sarif["runs"] = runs
     seen: dict[str, int] = {}
-    for run in sarif.get("runs", []):
+    for run in runs:
         slug = _slug(run.get("tool", {}).get("driver", {}).get("name", ""))
         seen[slug] = seen.get(slug, 0) + 1
         suffix = "" if seen[slug] == 1 else f"-{seen[slug]}"
@@ -48,4 +68,4 @@ def main(src: str, dst: str, prefix: str) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(*sys.argv[1:4]))
+    sys.exit(main(*sys.argv[1:]))

@@ -38,6 +38,13 @@ dependencies.
 - Routine dependency updates: platformdirs 4.13.5, pydantic 2.14.1, filelock 4.2.1,
   virtualenv 21.14.13.
 
+### Fixed
+
+- **Fixed Codacy findings stayed open in code scanning.** The Codacy CLI leaves a tool
+  out of its SARIF output once that tool has nothing to report, so code scanning never
+  saw a new analysis for it and kept the old alerts open. The security workflow now
+  uploads an empty result for each clean tool, which closes alerts that are fixed.
+
 ## [2.0.3] - 2026-10-18
 
 GitHub Marketplace release.
