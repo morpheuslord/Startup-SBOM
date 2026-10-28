@@ -97,24 +97,27 @@ def test_threat_filters_sort_and_search(make_app: MakeApp, report: Report) -> No
             table = screen.query_one("#threat-table", DataTable)
             assert table.row_count == 4
             assert screen.threat_rows[0].threat.id == "TH-0001"  # highest risk first
+
+            def ids() -> list[str]:
+                return [r.threat.id for r in screen.threat_rows]
+
+            # Filters apply on message round-trips and the search is debounced,
+            # so poll instead of sleeping a fixed time (slow Windows runners).
             screen.query_one("#f-ssvc", Select).value = "Act"
-            await pilot.pause()
-            assert table.row_count == 1
+            await wait_until(pilot, lambda: table.row_count == 1)
             assert screen.current_threat is not None
             assert screen.current_threat.threat.id == "TH-0001"
             screen.query_one("#f-ssvc", Select).value = "any"
-            await pilot.pause()
+            await wait_until(pilot, lambda: table.row_count == 4)
             screen.query_one("#f-kev", Checkbox).value = True
-            await pilot.pause()
-            assert [r.threat.id for r in screen.threat_rows] == ["TH-0001"]
+            await wait_until(pilot, lambda: ids() == ["TH-0001"])
             screen.query_one("#f-kev", Checkbox).value = False
-            await pilot.pause()
+            await wait_until(pilot, lambda: table.row_count == 4)
             search = screen.query_one("#threat-search", Input)
             search.value = "liblzma"
-            await pilot.pause(0.4)  # debounce
-            assert [r.threat.id for r in screen.threat_rows] == ["TH-0002"]
+            await wait_until(pilot, lambda: ids() == ["TH-0002"])
             search.value = ""
-            await pilot.pause(0.4)
+            await wait_until(pilot, lambda: table.row_count == 4)
             screen.action_cycle_sort()  # risk -> epss
             await pilot.pause()
             assert screen.sort_key == "epss"
