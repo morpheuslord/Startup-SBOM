@@ -11,8 +11,8 @@ authors:
   - given-names: "Chiranjeevi"
     family-names: "G"
     affiliation: "Cygnenoir-Cyber"
-version: 2.0.3
-date-released: 2026-10-18
+version: 2.0.4
+date-released: 2026-10-28
 doi: 10.5281/zenodo.19307312
 license: MIT
 url: "https://github.com/morpheuslord/Startup-SBOM"

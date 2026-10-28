@@ -107,4 +107,4 @@ extra:
     - icon: fontawesome/brands/docker
       link: https://github.com/morpheuslord/Startup-SBOM/pkgs/container/startup-sbom
 
-copyright: Startup-SBOM 2.0.3 · Copyright &copy; morpheuslord — MIT License
+copyright: Startup-SBOM 2.0.4 · Copyright &copy; morpheuslord — MIT License

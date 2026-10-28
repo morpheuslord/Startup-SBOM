@@ -207,7 +207,7 @@ A2A / ACP (Agent Communication Protocol) agent servers.
 
 ```yaml
 - repo: https://github.com/morpheuslord/Startup-SBOM
-  rev: v2.0.3
+  rev: v2.0.4
   hooks:
     - id: startup-sbom
       args: [scan, "dir:rootfs", --offline, --fail-on, act]

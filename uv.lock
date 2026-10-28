@@ -3230,7 +3230,7 @@ wheels = [
 
 [[package]]
 name = "startup-sbom"
-version = "2.0.3"
+version = "2.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "backports-zstd", marker = "python_full_version < '3.14'" },

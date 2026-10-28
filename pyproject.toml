@@ -4,7 +4,7 @@ build-backend = "uv_build"
 
 [project]
 name = "startup-sbom"
-version = "2.0.3"
+version = "2.0.4"
 description = "Root-confined static analysis of Linux root filesystems and container images: map what runs at boot to its packages, reverse vulnerabilities into concrete threats, chain attacks and trace supply-chain blast radius."
 readme = "README.md"
 license = "MIT"

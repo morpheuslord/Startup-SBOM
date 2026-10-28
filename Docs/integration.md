@@ -73,7 +73,7 @@ The action installs uv, runs the scanner via `uvx`, writes a job-summary table, 
 ```yaml
 repos:
   - repo: https://github.com/morpheuslord/Startup-SBOM
-    rev: v2.0.3
+    rev: v2.0.4
     hooks:
       - id: startup-sbom            # or: startup-sbom-offline (adds --offline --quiet)
         args: [dir:rootfs, -f, cyclonedx, -o, sbom-out, --fail-on, high]

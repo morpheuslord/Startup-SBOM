@@ -8,6 +8,43 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
+## [2.0.4] - 2026-10-28
+
+Security release. The scanner's own code is unchanged; this release ships patched
+dependencies.
+
+### Security
+
+- **certifi 2026.10.23** (was 2026.7.22): drops the emSign root CAs whose intermediate
+  CA keys were compromised (GHSA-6q48-6c7w-9gw2). certifi supplies the trust store for
+  every HTTPS request the scanner makes, including vulnerability-database lookups, so
+  this affects every install.
+- **fastmcp-slim 4.1.4** (was 4.1.0) and **authlib 1.9.1** (was 1.8.0), used only by the
+  `ai` and `agents-server` extras. The fastmcp-slim update fixes skipped authorization
+  on direct calls to transformed components (GHSA-7xgj-8392-5q4r) and MCP client OAuth
+  providers built without issuer binding, which could send the client secret to an
+  attacker's authorization server (GHSA-vqqp-x5qm-5qp4). fastmcp-slim also no longer
+  pulls in keyring and its helpers.
+- The container image and `uv.lock` carry these versions. If you installed with pip or
+  `uv tool`, upgrade the dependencies as well as startup-sbom, for example with
+  `uv tool upgrade startup-sbom` or `pip install -U --upgrade-strategy eager startup-sbom`.
+- The Codacy Analysis CLI used by the security workflow is patched to undici 6.29.1 and
+  fast-uri 3.1.9. This is CI tooling only and is not shipped.
+
+### Changed
+
+- The GitHub Action uploads SARIF with `github/codeql-action/upload-sarif` v4.39.0.
+- The container image is built with uv 0.13.5.
+- Routine dependency updates: platformdirs 4.13.5, pydantic 2.14.1, filelock 4.2.1,
+  virtualenv 21.14.13.
+
+### Fixed
+
+- **Fixed Codacy findings stayed open in code scanning.** The Codacy CLI leaves a tool
+  out of its SARIF output once that tool has nothing to report, so code scanning never
+  saw a new analysis for it and kept the old alerts open. The security workflow now
+  uploads an empty result for each clean tool, which closes alerts that are fixed.
+
 ## [2.0.3] - 2026-10-18
 
 GitHub Marketplace release.
@@ -219,6 +256,7 @@ Initial public release (`main.py` + `sbom_manager/`): dpkg/rpm startup-service m
 NVD lookups, CycloneDX output and service flowcharts. Archived at DOI
 [10.5281/zenodo.19307312](https://doi.org/10.5281/zenodo.19307312).
 
+[2.0.4]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.3...v2.0.4
 [2.0.3]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/morpheuslord/Startup-SBOM/compare/v2.0.0...v2.0.1
