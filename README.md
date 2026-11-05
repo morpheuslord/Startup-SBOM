@@ -12,6 +12,7 @@
   <a href="https://github.com/morpheuslord/Startup-SBOM/actions/workflows/ci.yml"><img src="https://github.com/morpheuslord/Startup-SBOM/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://morpheuslord.github.io/Startup-SBOM/"><img src="https://img.shields.io/badge/docs-GitHub%20Pages-06b6d4" alt="Documentation"></a>
   <a href="https://github.com/morpheuslord/Startup-SBOM/blob/main/LICENSE"><img src="https://img.shields.io/pypi/l/startup-sbom" alt="License: MIT"></a>
+  <a href="https://cyclonedx.org/tool-center/#!td=startup_sbom"><img src="https://img.shields.io/badge/CycloneDX-Tool%20Center-0d6efd" alt="Listed in the CycloneDX Tool Center"></a>
 </p>
 
 <p align="center"><a href="https://morpheuslord.github.io/Startup-SBOM/"><strong>Read the documentation →</strong></a></p>
@@ -141,7 +142,7 @@ error, `3` internal error.
 | Format | File | Use it for |
 |---|---|---|
 | `json` | `report.json` | Complete native report (versioned schema) |
-| `cyclonedx` | `sbom.cdx.json` | Dependency-Track, Grype, Trivy; includes services, dependencies and vulnerabilities |
+| `cyclonedx` | `sbom.cdx.json` | Dependency-Track, Grype, Trivy; includes services, dependencies and vulnerabilities. Startup-SBOM is listed in the [CycloneDX Tool Center](https://cyclonedx.org/tool-center/#!td=startup_sbom) |
 | `spdx` | `sbom.spdx.json` | SPDX 2.3 consumers |
 | `sarif` | `results.sarif` | GitHub code scanning / CI annotations |
 | `openvex`, `cdx-vex` | `vex.*.json` | Reachability-aware VEX for Grype, Trivy, Dependency-Track |
@@ -207,7 +208,7 @@ A2A / ACP (Agent Communication Protocol) agent servers.
 
 ```yaml
 - repo: https://github.com/morpheuslord/Startup-SBOM
-  rev: v2.0.4
+  rev: v2.0.5
   hooks:
     - id: startup-sbom
       args: [scan, "dir:rootfs", --offline, --fail-on, act]
