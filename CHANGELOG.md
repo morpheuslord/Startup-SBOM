@@ -32,6 +32,12 @@ dependencies and a patched publishing action.
   v1.14.2 and earlier bundled a trust store that still contained the compromised emSign
   root CAs (GHSA-5xjx-3w67-w9x9), which the action uses for Trusted Publishing and
   PEP 740 attestations. This is CI tooling only and is not shipped.
+- The Codacy Analysis CLI used by the security workflow is patched to
+  decode-uri-component 0.5.1 (quadratic decoding of malformed percent-encoded input)
+  and minimatch 11.0.3 (glob pattern amplification, GHSA-g3hv-75wg-m249). minimatch
+  has no patched 8.x, 9.x or 10.x release, so every copy from 7.0.0 up is lifted to
+  11; the CLI's tool selection and results are unchanged. This is CI tooling only and
+  is not shipped.
 
 ### Changed
 
