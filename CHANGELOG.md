@@ -8,6 +8,36 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
+## [2.0.5] - 2026-11-05
+
+Security release. The scanner's own code is unchanged; this release ships patched
+dependencies and a patched publishing action.
+
+### Security
+
+- **joserfc 1.7.6** (was 1.7.5), pulled in through authlib by the `ai` and
+  `agents-server` extras. Its compact-JWS size guard split the input before checking
+  segment sizes, so an oversized token was copied in full before it was rejected
+  (CVE-2026-119284).
+- **pyasn1 0.6.5** (was 0.6.4), pulled in through google-auth by the `ai` and
+  `agents-server` extras. Fixes four denial-of-service issues in the BER/DER decoder:
+  hash collisions in schemaless decoding (CVE-2026-119194), quadratic processing of
+  fragmented data (CVE-2026-119195), constructed bit string decoding (CVE-2026-119196)
+  and quadratic binary REAL decoding (CVE-2026-119197).
+- `uv.lock` carries these versions. Neither package is part of the base install or the
+  container image; if you installed an extra with pip or `uv tool`, upgrade the
+  dependencies as well as startup-sbom, for example with `uv tool upgrade startup-sbom`
+  or `pip install -U --upgrade-strategy eager "startup-sbom[ai]"`.
+- The release workflow publishes to PyPI with `pypa/gh-action-pypi-publish` v1.14.3.
+  v1.14.2 and earlier bundled a trust store that still contained the compromised emSign
+  root CAs (GHSA-5xjx-3w67-w9x9), which the action uses for Trusted Publishing and
+  PEP 740 attestations. This is CI tooling only and is not shipped.
+
+### Changed
+
+- The README links Startup-SBOM's listing in the
+  [CycloneDX Tool Center](https://cyclonedx.org/tool-center/#!td=startup_sbom).
+
 ## [2.0.4] - 2026-10-28
 
 Security release. The scanner's own code is unchanged; this release ships patched
