@@ -8,6 +8,14 @@ pre-releases, e.g. `2.1.0rc1`).
 The release workflow copies the section whose heading matches the pushed tag
 (`## [X.Y.Z]`) into the GitHub release notes.
 
+## [2.0.6] - 2026-11-15
+Dependabot found security issues and merged them to main, updating version to make sure pip
+also gets the updated version.
+
+### Security
+* Bumps opentelemetry-api from 1.45.1 to 1.45.2.
+* Bumps dnspython from 2.9.0 to 2.9.2.
+
 ## [2.0.5] - 2026-11-05
 
 Security release. The scanner's own code is unchanged; this release ships patched
